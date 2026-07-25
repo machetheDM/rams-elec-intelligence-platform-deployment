@@ -1,4 +1,8 @@
 FROM node:20-alpine AS base
+# Prisma's query engine links against OpenSSL, which node:*-alpine doesn't
+# ship — without this it falls back to a guessed "openssl-1.1.x" build and
+# fails at load with "Error loading shared library libssl.so.1.1".
+RUN apk add --no-cache openssl
 
 FROM base AS deps
 WORKDIR /app
