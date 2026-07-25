@@ -33,8 +33,11 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
-        display: ["Inter", "system-ui", "sans-serif"],
+        // var(--font-inter) is provided by next/font in app/layout.tsx.
+        // The literal "Inter" fallback keeps things working if that
+        // variable is ever absent (e.g. an isolated component test).
+        sans: ["var(--font-inter)", "Inter", "system-ui", "-apple-system", "sans-serif"],
+        display: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"],
       },
       animation: {
         "fade-in": "fadeIn 0.6s ease-out",

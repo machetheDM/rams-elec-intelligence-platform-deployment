@@ -20,17 +20,35 @@ import type { NextConfig } from "next";
 //   form-action 'self'     — Forms can only submit to our domain
 //   upgrade-insecure-requests — Auto-upgrade HTTP to HTTPS
 // =============================================================================
+// DEVELOPMENT RELAXATIONS — never applied to a production build.
+//
+// Next.js dev mode runs React Fast Refresh, which evaluates modules via
+// eval(). Without 'unsafe-eval' the dev runtime throws
+//   "Uncaught EvalError: ... 'unsafe-eval' is not an allowed source of script"
+// inside @next/react-refresh-utils, which kills hydration for the ENTIRE
+// page — every client component silently stops working while the
+// server-rendered HTML still looks correct. Production never needs eval,
+// so the shipped policy stays strict.
+//
+// Dev also needs:
+//   - ws:/wss: for the HMR websocket
+//   - http://localhost:* so the browser can reach the FastAPI services
+//     (the load-shedding widget calls its service directly)
+//   - NO upgrade-insecure-requests, which would rewrite http://localhost
+//     to https:// and break every local request
+const isDev = process.env.NODE_ENV === "development";
+
 const CSP_POLICY = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://cdn.jsdelivr.net`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: https:",
-  "connect-src 'self' https://api.ramsatelec.co.za",
+  `connect-src 'self'${isDev ? " ws://localhost:* http://localhost:*" : ""} https://api.ramsatelec.co.za`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
-  "upgrade-insecure-requests",
+  ...(isDev ? [] : ["upgrade-insecure-requests"]),
 ].join("; ");
 
 // =============================================================================

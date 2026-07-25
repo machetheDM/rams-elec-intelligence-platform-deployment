@@ -1,7 +1,22 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
+
+// Loaded via next/font rather than raw <link> tags in a manual <head>.
+// React 19 hoists <link> elements, so hand-writing <head> in an App Router
+// root layout reorders them relative to Next's own scripts — the server
+// HTML then mismatches the client tree, hydration throws, and React bails
+// on the ENTIRE root (every client component silently stops working).
+// next/font also self-hosts the files, removing the render-blocking
+// round-trip to fonts.googleapis.com.
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Rams @Elec | Professional Electrical & Refrigeration Services",
@@ -17,18 +32,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        {/*
-          Intentionally raw <link> tags for now — migrating to next/font/google
-          is a font-loading *mechanism* change best done alongside the v0.dev
-          visual redesign rather than as an isolated lint fix.
-        */}
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-      </head>
+    <html lang="en" className={`dark ${inter.variable}`}>
       <body className="antialiased bg-industrial-950 text-industrial-100 min-h-screen flex flex-col">
         <Navbar />
         <main className="flex-1">{children}</main>
