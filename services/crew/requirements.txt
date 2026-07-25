@@ -1,0 +1,21 @@
+# CrewAI multi-agent triage service
+#
+# Deliberately does NOT include xgboost / shap / mlflow / numpy. The crew
+# reaches the cost model over HTTP (services/triage), so this image stays
+# small and — more importantly — CrewAI's dependency tree (litellm,
+# instructor, openai, tiktoken) never has to reconcile with triage's
+# `numpy>=1.26,<2.5` pin, which shap's numba requires.
+#
+# CrewAI 1.x requires Python <3.14. The containers are python:3.12-slim, so
+# this resolves cleanly there; on a 3.14 dev machine pip silently falls back
+# to crewai 0.11.2 (a 2024-era API), so verify in Docker, not locally.
+crewai>=1.15.0,<2.0.0
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+httpx>=0.27.0
+pydantic>=2.9.0
+python-dotenv>=1.0.0
+
+# Required by security.setup -> security.auth.jwt_middleware
+pyjwt>=2.9.0

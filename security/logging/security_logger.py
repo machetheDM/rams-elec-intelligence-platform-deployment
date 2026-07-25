@@ -57,8 +57,12 @@ import sys
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import SQLAlchemyError
+# NOTE: sqlalchemy is imported lazily inside _persist_to_db() rather than at
+# module level. Every service constructs SecurityLogger(engine=None) and logs
+# only to stdout, so requiring a database driver just to emit an audit line
+# made this shared package unusable by services that have no database — the
+# CrewAI service (services/crew) hits exactly that. `create_engine` was also
+# imported here and never used.
 
 # ── Structured JSON logging to stdout ──────────────────────────────────
 # Configure root logger to output JSON for SIEM ingestion
@@ -107,6 +111,12 @@ class SecurityLogger:
 
     def _persist_to_db(self, log_entry: dict) -> None:
         """Persist log entry to PostgreSQL security_audit_log table."""
+        # Imported here, not at module scope — see the note at the top of the
+        # file. Only reachable when a caller passed a real engine, which
+        # means sqlalchemy is necessarily installed.
+        from sqlalchemy import text
+        from sqlalchemy.exc import SQLAlchemyError
+
         try:
             with self.engine.begin() as conn:
                 # Create table if not exists (idempotent)
