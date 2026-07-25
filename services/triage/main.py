@@ -48,6 +48,7 @@ from security.input_validation.validators import (
     sanitize_prompt_input, MAX_MESSAGE_LENGTH,
 )
 from security.logging.security_logger import SecurityLogger
+from feature_encoding import FEATURE_COLS, CATEGORY_MAP, ZONE_MAP, encode_urgency_flag
 
 load_dotenv()
 
@@ -60,6 +61,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Security audit logger — constructed before apply_security_middleware so
+# auth failures, rate-limit hits, API key usage, and validation failures
+# from every middleware layer emit real audit events (see security/setup.py).
+sec_log = SecurityLogger(engine=None, service_name="triage")
+
 # Apply security middleware (replaces CORS wildcard)
 apply_security_middleware(
     app,
@@ -69,10 +75,8 @@ apply_security_middleware(
         "http://127.0.0.1:3000",
         os.getenv("FRONTEND_URL", ""),
     ],
+    security_logger=sec_log,
 )
-
-# Security audit logger
-sec_log = SecurityLogger(engine=None, service_name="triage")
 
 # ---------------------------------------------------------------------------
 # Database
@@ -104,10 +108,7 @@ def get_groq_client():
 # ---------------------------------------------------------------------------
 xgb_model = None
 shap_explainer = None
-model_features = [
-    "service_category_encoded", "urgency_flag", "area_zone_encoded",
-    "equipment_age_years", "month", "day_of_week", "is_weekend",
-]
+model_features = FEATURE_COLS
 
 
 def load_model():
@@ -451,17 +452,18 @@ async def estimate_cost(input_data: CostEstimateInput):
 
 
 def _build_features(input_data: CostEstimateInput) -> np.ndarray:
-    """Build feature vector for XGBoost prediction."""
-    cat_map = {"electrical": 0, "refrigeration": 1, "emergency": 2, "maintenance": 3, "installation": 4, "general": 5}
-    urgency_map = {"low": 0, "medium": 0, "high": 1, "emergency": 1}
-    zone_map = {"Sandton": 0, "Midrand": 1, "Centurion": 2, "Pretoria East": 3, "Soweto": 4,
-                "Polokwane": 5, "Mokopane": 6, "Bela-Bela": 7}
+    """Build feature vector for XGBoost prediction.
 
+    Uses the same CATEGORY_MAP/ZONE_MAP/encode_urgency_flag that
+    train_model.py trains against (services/triage/feature_encoding.py) —
+    training and inference must agree on what integer each category/zone
+    encodes to, or predictions are silently wrong.
+    """
     now = datetime.now()
     features = np.zeros((1, len(model_features)))
-    features[0, 0] = cat_map.get(input_data.service_category, 5)
-    features[0, 1] = urgency_map.get(input_data.urgency, 0)
-    features[0, 2] = zone_map.get(input_data.area_zone or "", 0)
+    features[0, 0] = CATEGORY_MAP.get(input_data.service_category, 5)
+    features[0, 1] = encode_urgency_flag(input_data.urgency)
+    features[0, 2] = ZONE_MAP.get(input_data.area_zone or "", 0)
     features[0, 3] = 0  # equipment_age_years (unknown for new inquiry)
     features[0, 4] = now.month
     features[0, 5] = now.weekday()
@@ -569,6 +571,42 @@ async def assign_technician(classification: ClassificationResult):
         inquiry_area=classification.area_zone or "unknown",
         service_category=classification.service_category,
     )
+
+
+# ---------------------------------------------------------------------------
+# Model Metrics — read-only, served from the artifact train_model.py writes
+# ---------------------------------------------------------------------------
+
+class ModelMetrics(BaseModel):
+    trained: bool
+    trained_at: Optional[str] = None
+    training_samples: Optional[int] = None
+    test_samples: Optional[int] = None
+    data_source: Optional[str] = None
+    mae: Optional[float] = None
+    rmse: Optional[float] = None
+    r2: Optional[float] = None
+    cv_mae: Optional[float] = None
+    cv_folds: Optional[int] = None
+    feature_importance: Optional[dict[str, float]] = None
+
+
+@app.get("/triage/model-metrics", response_model=ModelMetrics)
+async def model_metrics():
+    """Serve the quote estimator's held-out evaluation metrics.
+
+    Read-only: this endpoint never trains or recomputes anything, it just
+    reads the metrics.json that train_model.py writes next to the model
+    artifact after each training run. Kept separate from /triage/health
+    (which reports whether a model is loaded) — this reports how good
+    that model actually is.
+    """
+    metrics_path = os.path.join(os.path.dirname(__file__), "model", "metrics.json")
+    if not os.path.exists(metrics_path):
+        return ModelMetrics(trained=False)
+    with open(metrics_path, "r") as f:
+        data = json.load(f)
+    return ModelMetrics(trained=True, **data)
 
 
 # ---------------------------------------------------------------------------

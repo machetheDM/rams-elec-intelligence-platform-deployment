@@ -1,0 +1,39 @@
+# Repo-root .dockerignore — applies to any image built with context "."
+# (currently: services/triage/Dockerfile, services/dispatch/Dockerfile)
+
+.git/
+.github/
+
+# Node
+**/node_modules/
+frontend/.next/
+frontend/out/
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/venv/
+**/*.egg-info/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Docs, reports, terraform, misc large/unrelated content
+docs/
+reports/
+terraform/
+n8n/
+airflow/
+etl/
+dashboard/
+frontend/
+scripts/
+ml/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store

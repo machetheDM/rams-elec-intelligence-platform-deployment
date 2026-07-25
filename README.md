@@ -15,7 +15,7 @@ Replaces a static brochure site with a functional, AI-driven business platform d
 ```mermaid
 graph TB
     subgraph "Public Layer"
-        FE[Next.js 16 Frontend<br/>Port 3000]
+        FE[Next.js 15 Frontend<br/>Port 3000]
         IW[Inquiry Widget]
         LW[Load-Shedding Widget]
     end
@@ -73,7 +73,7 @@ graph TB
 | 5 | Customer Portal + RAG Chatbot | NextAuth.js + FAISS knowledge base | ⏳ Pending |
 | 6 | Analytics Dashboard | 6-page Streamlit dashboard | ⏳ Pending |
 | 7 | Dispatch & Job Assignment | Skillset-based technician matching | ⏳ Pending |
-| 8 | Public Frontend Upgrade | Next.js 16 responsive dark-mode site | ⏳ Pending |
+| 8 | Public Frontend Upgrade | Next.js 15 responsive dark-mode site | ⏳ Pending |
 | 9 | Integration Testing & Deployment | Docker Compose + CI + Vercel/Railway | ⏳ Pending |
 
 ## Module Overview
@@ -87,7 +87,7 @@ graph TB
 | 5 | **Customer Portal** | NextAuth.js auth. Equipment registry, service history, compliance doc prep, RAG chatbot trained on SANS 10142. | NextAuth, FAISS, LangChain |
 | 6 | **Analytics Dashboard** | 6-page Streamlit dashboard: business overview, inquiry analytics, revenue forecasting (Prophet), equipment health, technician performance, load-shedding impact. | Streamlit, Plotly, Prophet |
 | 7 | **Smart Dispatch** | Skillset + availability + area familiarity scoring. Kanban job board. Technician mobile view. | FastAPI, Next.js |
-| 8 | **Frontend Upgrade** | Conversational multi-step inquiry form. Real-time load-shedding widget. Service catalog with pricing. Responsive, dark mode. | Next.js 16, Tailwind |
+| 8 | **Frontend Upgrade** | Conversational multi-step inquiry form. Real-time load-shedding widget. Service catalog with pricing. Responsive, dark mode. | Next.js 15, Tailwind |
 | 9 | **Integration & Deploy** | Docker Compose local dev. GitHub Actions CI. Integration test (full customer journey). Vercel + Railway deployment config. | Docker, GitHub Actions |
 
 ---
@@ -197,25 +197,30 @@ cd frontend && npm run dev &
 
 ## Retraining the Quote Estimator
 
-When real client job data becomes available:
+```bash
+cd services/triage
+python train_model.py
+```
 
-1. Run the ETL pipeline to ingest real data into the Gold layer:
-   ```bash
-   python etl/scripts/generate_seed_data.py  # Replace with real data ingestion
-   ```
+`train_model.py` trains on `gold_jobs` in Postgres when it's populated with real completed jobs. Until then — no database reachable, or no completed jobs yet — it automatically falls back to running the synthetic data generator (`etl/scripts/generate_seed_data.py`) through the real Bronze→Silver→Gold pipeline, so the model, `GET /triage/model-metrics`, and this README's numbers below are never stale placeholders; they're what the pipeline actually produced last time it ran, tagged with exactly which data source produced them (`metrics.json`'s `data_source` field).
 
-2. Retrain the XGBoost model:
-   ```bash
-   cd services/triage
-   python train_model.py
-   ```
+The model artifact is saved to `services/triage/model/` (not committed — `.pkl` files are gitignored) and loaded by the triage API on restart. `services/triage/model/metrics.json` *is* committed — it's the single source of truth `GET /triage/model-metrics` serves.
 
-3. The new model is automatically saved to `services/triage/model/` and loaded by the triage API on restart.
+**Last training run** (synthetic ETL fallback, 135 completed synthetic jobs, 108 train / 27 test):
 
-4. Compare metrics in MLflow:
-   ```bash
-   mlflow ui
-   ```
+| Metric | Value |
+|---|---|
+| MAE | R11,280.65 |
+| RMSE | R17,949.38 |
+| R² | 0.5121 |
+| CV MAE (5-fold) | R10,393.38 |
+
+R² of ~0.51 is honest, not polished — the synthetic generator draws cost from a wide random range per service category with no other structure, so a large share of the variance is irreducible by design. This will read differently once real client job history lands in `gold_jobs`.
+
+Compare experiment runs in MLflow:
+```bash
+mlflow ui
+```
 
 ---
 
@@ -264,7 +269,7 @@ ramsatelec-intelligence/
 │   ├── chatbot/              # RAG chatbot (FAISS + Groq)
 │   └── dispatch/             # Skillset-based technician assignment
 ├── dashboard/                # Streamlit analytics (6 pages)
-├── frontend/                 # Next.js 16 public site + customer portal
+├── frontend/                 # Next.js 15 public site + customer portal
 │   └── src/
 │       ├── app/(public)/     # Home, Services, Inquiry
 │       ├── app/(portal)/     # Customer dashboard, equipment, chatbot
@@ -284,7 +289,7 @@ ramsatelec-intelligence/
 
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js 16, TypeScript, Tailwind CSS |
+| Frontend | Next.js 15, TypeScript, Tailwind CSS |
 | Auth | NextAuth.js v5 |
 | ML Microservices | FastAPI, scikit-learn, XGBoost, SHAP |
 | LLM/RAG | Groq llama-3.3-70b, FAISS, LangChain, sentence-transformers |

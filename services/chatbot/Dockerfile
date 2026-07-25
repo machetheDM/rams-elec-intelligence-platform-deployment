@@ -2,10 +2,17 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Build context is the repo root (not services/chatbot) so this image can also
+# copy in the shared root-level `security/` package that main.py imports.
+COPY services/chatbot/requirements.txt services/chatbot/requirements.txt
+RUN pip install --no-cache-dir -r services/chatbot/requirements.txt
 
-COPY . .
+COPY security/ security/
+COPY services/chatbot/ services/chatbot/
+
+# Mirrors the on-disk repo layout so main.py's
+# sys.path.insert(0, "../..") still resolves to /app, where security/ lives.
+WORKDIR /app/services/chatbot
 
 EXPOSE 8003
 

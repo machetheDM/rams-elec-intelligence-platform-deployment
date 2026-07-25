@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: cd apps/web && npm ci && npx eslint . --max-warnings 0
+      - run: cd frontend && npm ci && npx eslint . --max-warnings 0
 
   test-python:
     name: Test Python (pytest + coverage)
@@ -54,6 +54,8 @@ jobs:
       - run: |
           pip install -r services/triage/requirements.txt
           pip install -r services/loadshedding/requirements.txt
+          pip install -r services/chatbot/requirements.txt
+          pip install -r services/dispatch/requirements.txt
           pip install pytest pytest-cov
       - run: pytest services/ --cov=services --cov-report=xml --cov-report=term
         env:
@@ -69,16 +71,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: cd apps/web && npm ci && npm run build
+      - run: cd frontend && npm ci && npm run build
 
   docker-build:
     name: Build Docker Images
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -f docker/Dockerfile.web -t rams-elec-web .
-      - run: docker build -f docker/Dockerfile.fastapi -t rams-elec-fastapi .
-      - run: docker build -f docker/Dockerfile.airflow -t rams-elec-airflow .
+      - run: docker build -t rams-elec-web ./frontend
+      - run: docker build -t rams-elec-triage -f services/triage/Dockerfile .
+      - run: docker build -t rams-elec-dispatch -f services/dispatch/Dockerfile .
+      - run: docker build -t rams-elec-loadshedding -f services/loadshedding/Dockerfile .
+      - run: docker build -t rams-elec-chatbot -f services/chatbot/Dockerfile .
+      - run: docker build -t rams-elec-dashboard ./dashboard
+      - run: docker build -f docker/Dockerfile.airflow -t rams-elec-airflow ./etl
 
   # ===========================================================================
   # Security Gate — must pass before deployment

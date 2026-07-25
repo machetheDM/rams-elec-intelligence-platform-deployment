@@ -1,0 +1,20 @@
+{
+  "trained_at": "2026-07-25T09:22:27.863465+00:00",
+  "training_samples": 108,
+  "test_samples": 27,
+  "data_source": "synthetic_etl_pipeline",
+  "mae": 11280.65,
+  "rmse": 17949.38,
+  "r2": 0.5121,
+  "cv_mae": 10393.38,
+  "cv_folds": 5,
+  "feature_importance": {
+    "service_category_encoded": 263056432.0,
+    "urgency_flag": 78174328.0,
+    "area_zone_encoded": 48657200.0,
+    "equipment_age_years": 66843944.0,
+    "month": 78965224.0,
+    "day_of_week": 53514808.0,
+    "is_weekend": 31432324.0
+  }
+}

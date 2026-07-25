@@ -1,0 +1,89 @@
+# Build Journal
+
+Maintained per `CONTRIBUTING.md` — updated after each module with what was built, key decisions, challenges, and lessons learned.
+
+---
+
+## Structural Foundation Fix — 2026-07-25
+
+### What was built
+
+`docker-compose.yml`, CI (`.github/workflows/ci.yml`), and the security scan pipeline (`.github/workflows/security.yml`) were fixed to match the repo's real layout and to actually run end-to-end, instead of silently failing:
+
+- `docker-compose.yml`'s `web` and `streamlit` services pointed at empty scaffold directories (`apps/web`, `apps/dashboard`) left over from an earlier structure; real code lives in `frontend/` and `dashboard/`. Build contexts corrected.
+- `services/triage` and `services/dispatch` import the repo-root `security/` package (Module 2 hardening — JWT auth, rate limiting, input validation, audit logging) via a relative `sys.path.insert`, but their Dockerfiles built from a per-service context that didn't include `security/`. Both Dockerfiles now build from repo root, mirroring the on-disk layout inside the image so the existing relative-import logic in `main.py` keeps working unmodified. Added a root `.dockerignore` since this widens the build context.
+- `security/auth/api_key_middleware.py` exempted the literal path `/health` from API-key checks, but every service mounts its health check under its own prefix (`/triage/health`, `/dispatch/health`, etc.) — so the API-key gate was silently blocking Docker's own `HEALTHCHECK` on every hardened service. Changed to a suffix match.
+- `security/auth/jwt_middleware.py`'s dependency, PyJWT, was missing from `triage` and `dispatch`'s `requirements.txt` — `security.setup` imports it unconditionally, so both services would have failed to start regardless of the Docker fix above. Added.
+- `ci.yml` and `security.yml` both referenced `apps/web` (empty) instead of `frontend`, and built two dead/orphaned Dockerfiles (`docker/Dockerfile.web`, `docker/Dockerfile.fastapi`) that hardcoded the same wrong paths. Deleted both files; CI and the Trivy container-security scan now build the seven real images (`frontend`, `triage`, `dispatch`, `loadshedding`, `chatbot`, `dashboard`, `airflow`) directly — so the container security scan that's part of the Module 3 DevSecOps story now actually scans what would be deployed, not two placeholder images.
+- `pytest services/` was collecting zero tests (none existed) and failing non-zero by default. Added a `test_health.py` smoke test per service (FastAPI `TestClient` against each real health endpoint) — minimal, but for `triage`/`dispatch` it doubles as a regression guard that the app still imports and mounts `security/` correctly. Added a root `pytest.ini` (`--import-mode=importlib`) since all four services share the basename `test_health.py` and aren't Python packages.
+- `test-python` in `ci.yml` only installed `triage`/`loadshedding` requirements; added `chatbot`/`dispatch` so the full `services/` tree can actually be collected and run.
+
+### Key decisions
+
+- Kept `loadshedding` and `chatbot` on their existing per-service Docker build context — they don't import `security/` yet, so widening their context wasn't needed for this pass. Wiring them into the Module 2 hardening is next.
+- Chose explicit `docker build` commands over a single `docker compose build` in CI, matching how the pre-existing Trivy scan step needed individually tagged images anyway — one build definition per artifact, mirrored identically between `ci.yml` and `security.yml`.
+
+### Lessons learned
+
+The five graded coursework modules were internally consistent (audit → hardening code → CI → cloud docs → doc pass), but nobody had exercised the full pipeline end-to-end against the actual repo layout — the `apps/` vs `frontend/`/`dashboard/` split happened after the compose/CI files were written and was never propagated. "The security middleware exists and is imported" and "the container that ships actually starts up with it" turned out to be two different claims — worth a real `docker-compose up` + `scripts/integration_test.py` run as a standing check going forward, not just code review.
+
+---
+
+## Security Hardening — chatbot & loadshedding, and a real bug in the existing middleware — 2026-07-25
+
+### What was built
+
+Extended the Module 2 security pattern (already live on `triage`/`dispatch`) to the two remaining services, and fixed a defect in the shared middleware that testing this properly for the first time surfaced:
+
+- `chatbot` and `loadshedding` now call `security.setup.apply_security_middleware` instead of a wildcard-CORS `CORSMiddleware`. `chatbot`'s `ChatRequest.message` — the highest-risk field in the repo, since it's injected straight into an LLM prompt — is now routed through `sanitize_prompt_input`, and its `conversation_history` is filtered to `role in {"user","assistant"}` with sanitised content only (previously a client could inject a fake `"role": "system"` message to override the system prompt). `loadshedding`'s `/subscribe` body is now `extra="forbid"` with SA-phone and area-zone whitelist validation.
+- Both services' Dockerfiles/build contexts widened to repo root, same reasoning as `triage`/`dispatch`'s fix above (they now import `security/` too). `pyjwt` added to both `requirements.txt` (same latent gap as before — `security.setup` imports it unconditionally).
+- **`sec_log = SecurityLogger(...)` was dead code in `triage`/`dispatch`** — instantiated, never called anywhere, despite both services' docstrings claiming "Audit logging: SecurityLogger emits structured JSON to stdout + DB." Rather than copy that gap into two more services, `security/setup.py` now accepts a `security_logger` param and wires it into every middleware: `APIKeyMiddleware` and `JWTAuthMiddleware` now log `AUTH_FAILURE`/`AUTH_SUCCESS`/`API_KEY_USAGE`, `RateLimiterMiddleware` logs `RATE_LIMIT_HIT`, and a new `RequestValidationError` handler logs `VALIDATION_FAILURE` on every Pydantic rejection. All four services construct `sec_log` before calling `apply_security_middleware` and pass it through.
+- **Found via testing, not review**: raising `HTTPException` from inside a `BaseHTTPMiddleware.dispatch()` (the pattern all three middleware classes used) does not get converted to a proper error response by Starlette — `ExceptionMiddleware`, which does that conversion, sits *inside* user-added middleware in the stack, so the exception propagates past it and would have surfaced as an unhandled 500 in production instead of 401/429. `api_key_middleware.py`, `rate_limiter.py`, and `jwt_middleware.py` now return `JSONResponse` directly. Caught by a new test (`test_recommend_rejects_requests_without_api_key`) that actually asserted on the status code instead of just checking the endpoint was "protected."
+- A second bug in my own new validation-failure handler, caught the same way: `RequestValidationError.errors()` can contain a raw `ValueError` object (in `ctx.error`), which isn't JSON-serializable — `JSONResponse(content={"detail": exc.errors()})` crashed with a 500 the first time a validator actually rejected something. Fixed with `jsonable_encoder`, the same way FastAPI's own default handler does it.
+- Also fixed: `RateLimiterMiddleware`'s exempt-path check had the identical `/health` vs `/triage/health` suffix bug as `api_key_middleware.py` (fixed in the prior entry) — Docker's `HEALTHCHECK` could eventually have been rate-limited.
+- Real security-behavior tests added per service (not just health checks): API-key rejection on a real business endpoint for all four services, area-zone validator rejection for `loadshedding`, prompt-injection sanitisation for `chatbot`.
+
+### Key decisions
+
+- Centralised `security_logger` wiring in `security/setup.py` rather than duplicating call sites in each service — one place to get right, four services get it for free.
+- Reused `log_auth_failure(source_ip, email, reason)` for API-key rejections (passing `email=""`) rather than adding a new `SecurityLogger` method — `SecurityLogger`'s method set was designed around user auth events; API keys don't have an email, but the shape (who/why) still fits well enough that a new near-duplicate method wasn't justified.
+
+### Lessons learned
+
+Every middleware bug in this entry was invisible from reading the code — `apply_security_middleware(app, enable_api_key=True, ...)` looks correct, the 401 `HTTPException` looks correct, the JSON response construction looks correct. All three only broke at the point a real HTTP request actually hit them. This is the same lesson as the previous entry, one layer deeper: passing code review and "the middleware is wired in" are not the same claim as "a request to this endpoint gets the response the code says it gets" — the only way to know the latter is to send the request.
+
+---
+
+## Flagship ML Feature — Quote Estimator, real metrics, published Result — 2026-07-25
+
+### What was built
+
+The AI Triage Engine's XGBoost quote estimator already existed (`services/triage/train_model.py`, `services/triage/main.py`'s `/triage/estimate-cost`) but its evaluation metrics only ever went to MLflow — nowhere a case study, dashboard, or recruiter could see them. This pass made the metrics real, traceable, and published:
+
+- **`services/triage/feature_encoding.py`** (new): single source of truth for `FEATURE_COLS`, `CATEGORY_MAP`, `ZONE_MAP`. Before this, `train_model.py` and `main.py`'s `_build_features()` each hardcoded their own copy of the same maps — harmless only by coincidence, since a model's category/zone encoding at training time must exactly match inference-time encoding or predictions are silently wrong (the model never learns "3 means electrical", it just learns column-value-3 correlates with certain costs). The ETL Gold layer (`etl/transformers/gold.py`) encodes the same columns independently by sorting whatever categories appear in a given batch — that encoding is only self-consistent within one run, and is *not* used for this model; `encode_features()` maps through the fixed dict instead.
+- **`train_model.py`**: `load_training_data()` now falls back to running the real synthetic-data generator (`etl/scripts/generate_seed_data.py`) through the actual Bronze→Silver→Gold ETL pipeline when no database is reachable or no completed jobs exist yet — reused, not duplicated. Added a synthetic `install_date` (the generator only produces job records, not an equipment registry) so `equipment_age_years` carries real variance instead of silently being an all-zero feature. Writes `services/triage/model/metrics.json` after every run — the one artifact in `model/` that *is* meant to be committed (`.gitignore` excludes `*.pkl`; the trained binary is a build artifact, the metrics are the published claim).
+- **`GET /triage/model-metrics`** (new, `main.py`): read-only, serves `metrics.json` — never trains or recomputes. Behind the same API-key gate as every other triage endpoint.
+- **Frontend logic layer** — deliberately zero markup, since v0.dev owns the UI layer separately: `frontend/src/lib/api/triage.ts` (typed fetch client), `frontend/src/hooks/useModelMetrics.ts` (headless state hook), `frontend/src/app/api/model-metrics/route.ts` (Next.js route handler holding the server-only `INTERNAL_API_KEY` — the triage service's API key must never reach the browser via a `NEXT_PUBLIC_*` var, so the browser calls this same-origin route, which calls triage server-side).
+
+### Real result (synthetic data — see disclosure below)
+
+Trained on 135 completed synthetic jobs (108 train / 27 test) via the offline ETL fallback:
+
+| Metric | Value |
+|---|---|
+| MAE | R11,280.65 |
+| RMSE | R17,949.38 |
+| R² | 0.5121 |
+| CV MAE (5-fold) | R10,393.38 |
+
+Top feature by XGBoost gain: `service_category_encoded`, well ahead of `month`/`urgency_flag`. R² of ~0.51 is honest, not impressive — `generate_synthetic_jobs()` draws cost from a wide `np.random.uniform` range per service type with no other structure, so a large share of the variance is irreducible noise by construction. This will read very differently once real client job data lands in `gold_jobs`; the `data_source` field in `metrics.json` (`"synthetic_etl_pipeline"` vs `"postgres:gold_jobs"`) makes which regime produced a given number unambiguous, always.
+
+### Challenges
+
+- SHAP's `numba` dependency rejected the NumPy version pip resolved for an unpinned `numpy>=1.26.0` (`numba needs NumPy 2.4 or less`) — real, reproducible on a fresh install, not a one-off. Already non-fatal (SHAP init is in its own `try/except` in both `train_model.py` and `main.py`), but pinned `numpy<2.5` in `services/triage/requirements.txt` anyway rather than leave it to chance which numpy pip happens to resolve.
+- `etl/extractors/__init__.py` eagerly imports `PDFExtractor`, which needs `pdfplumber`, even though the fallback path only needs `ExcelExtractor` — added `openpyxl`/`pdfplumber` to `services/triage/requirements.txt` (mirroring `etl/requirements.txt`) rather than restructure the ETL package's `__init__.py` for one caller.
+- The `test_health.py` harness (importlib-loaded, not a normal package import) didn't put the service directory on `sys.path`, so `main.py`'s new `from feature_encoding import ...` — its first-ever sibling-module import — broke test collection even though the identical import works fine under a real `uvicorn main:app`. Fixed in the harness, not the app code, since the app code is correct for how it's actually deployed.
+
+### Lessons learned
+
+Same theme as both prior entries: the parts of this that were hardest to get right were never the ML — they were the seams between systems written independently (main.py vs train_model.py's duplicated encoding maps, ETL package boundaries, a test harness that didn't fully replicate a real process's import context). None of that shows up in a training log that says "R² = 0.51, done." Verification has to include *loading the artifact the way the running system actually loads it*, not just confirming the training script exits zero.

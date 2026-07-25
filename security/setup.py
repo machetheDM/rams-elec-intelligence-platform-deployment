@@ -33,13 +33,17 @@ Usage:
     )
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from security.headers.security_headers import SecurityHeadersMiddleware
 from security.auth.rate_limiter import RateLimiterMiddleware
 from security.auth.jwt_middleware import JWTAuthMiddleware
 from security.auth.api_key_middleware import APIKeyMiddleware
+from security.logging.security_logger import SecurityLogger
 
 
 def apply_security_middleware(
@@ -49,6 +53,7 @@ def apply_security_middleware(
     cors_origins: list[str] | None = None,
     rate_limit: int = 100,
     rate_window: int = 60,
+    security_logger: SecurityLogger | None = None,
 ) -> None:
     """
     Apply all security middleware to a FastAPI application.
@@ -77,6 +82,12 @@ def apply_security_middleware(
         Default: 100 (suitable for most API endpoints).
     rate_window : int
         Rate limit window in seconds. Default: 60 (1 minute).
+    security_logger : SecurityLogger | None
+        When provided, wired into every middleware below so auth failures,
+        rate-limit hits, API key usage, and input validation failures all
+        emit real audit events instead of only a local log line. Pass the
+        service's own `SecurityLogger(engine=None, service_name="...")`
+        instance — constructed before this call.
     """
     # Default to localhost for development — override in production
     if cors_origins is None:
@@ -112,16 +123,45 @@ def apply_security_middleware(
         RateLimiterMiddleware,
         max_requests=rate_limit,
         window_seconds=rate_window,
+        security_logger=security_logger,
     )
 
     # ── Step 5: API key authentication (optional) ───────────────────
     # Verifies service-to-service calls using SHA-256 hashed keys.
     # Enable for all services that receive internal API calls.
     if enable_api_key:
-        app.add_middleware(APIKeyMiddleware)
+        app.add_middleware(APIKeyMiddleware, security_logger=security_logger)
 
     # ── Step 6: JWT authentication (optional) ───────────────────────
     # Verifies user identity and attaches role to request.state.
     # Enable for services with user-facing endpoints.
     if enable_auth:
-        app.add_middleware(JWTAuthMiddleware)
+        app.add_middleware(JWTAuthMiddleware, security_logger=security_logger)
+
+    # ── Step 7: Audit-log every input validation failure ────────────
+    # Pydantic validators (security/input_validation/validators.py) reject
+    # malformed input via ValueError, which FastAPI surfaces as a
+    # RequestValidationError. A burst of these from one IP is a probing
+    # signal worth an audit trail, not just a silent 422.
+    if security_logger is not None:
+        _register_validation_failure_handler(app, security_logger)
+
+
+def _register_validation_failure_handler(app: FastAPI, security_logger: SecurityLogger) -> None:
+    @app.exception_handler(RequestValidationError)
+    async def _validation_exception_handler(request: Request, exc: RequestValidationError):
+        client_ip = request.client.host if request.client else "unknown"
+        for error in exc.errors():
+            field = ".".join(str(p) for p in error.get("loc", []) if p != "body")
+            security_logger.log_validation_failure(
+                source_ip=client_ip,
+                endpoint=str(request.url.path),
+                field=field or "unknown",
+                value=str(error.get("input", ""))[:100],
+                reason=error.get("msg", "validation error"),
+            )
+        # exc.errors() can contain raw exception objects (in ctx.error) from
+        # our ValueError-raising validators — jsonable_encoder is required
+        # here, the same way FastAPI's own default handler does it, or
+        # JSONResponse's json.dumps() raises trying to serialize them.
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})

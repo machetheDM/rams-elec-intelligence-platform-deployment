@@ -22,13 +22,16 @@ Usage:
 import os
 import time
 import logging
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from functools import wraps
 
 import jwt
 from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
+
+if TYPE_CHECKING:
+    from security.logging.security_logger import SecurityLogger
 
 logger = logging.getLogger("security.auth")
 
@@ -143,6 +146,10 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
       - OPTIONS requests (CORS preflight)
     """
 
+    def __init__(self, app, security_logger: "Optional[SecurityLogger]" = None):
+        super().__init__(app)
+        self.security_logger = security_logger
+
     async def dispatch(self, request: Request, call_next) -> Response:
         # Skip auth for public endpoints and CORS preflight
         if request.url.path in PUBLIC_ENDPOINTS or request.method == "OPTIONS":
@@ -152,6 +159,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         for prefix in ["/docs", "/openapi.json", "/redoc"]:
             if request.url.path.startswith(prefix):
                 return await call_next(request)
+
+        client_ip = request.client.host if request.client else "unknown"
 
         # Extract token from Authorization header
         auth_header = request.headers.get("Authorization", "")
@@ -163,20 +172,43 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             # Also check query param (for WebSocket or SSE connections)
             token = request.query_params.get("token")
 
+        # Note: this dispatch() returns JSONResponse directly on every
+        # failure path below rather than raising HTTPException — Starlette's
+        # ExceptionMiddleware (which normally converts HTTPException to a
+        # proper response) sits *inside* user-added middleware like this
+        # one, so a raised exception here would propagate past it and
+        # surface as an unhandled 500 instead of 401.
         if not token:
             logger.warning(f"No auth token for {request.method} {request.url.path}")
-            raise HTTPException(
+            if self.security_logger is not None:
+                self.security_logger.log_auth_failure(
+                    source_ip=client_ip, email="",
+                    reason=f"No bearer token for {request.url.path}",
+                )
+            return JSONResponse(
                 status_code=401,
-                detail="Authentication required. Provide Bearer token in Authorization header.",
+                content={"detail": "Authentication required. Provide Bearer token in Authorization header."},
             )
 
         # Check blacklist
         if is_token_blacklisted(token):
             logger.warning(f"Blacklisted token used for {request.url.path}")
-            raise HTTPException(status_code=401, detail="Token has been revoked")
+            if self.security_logger is not None:
+                self.security_logger.log_auth_failure(
+                    source_ip=client_ip, email="",
+                    reason=f"Blacklisted token used for {request.url.path}",
+                )
+            return JSONResponse(status_code=401, content={"detail": "Token has been revoked"})
 
         # Decode and verify
-        payload = decode_jwt(token)
+        try:
+            payload = decode_jwt(token)
+        except HTTPException as exc:
+            if self.security_logger is not None:
+                self.security_logger.log_auth_failure(
+                    source_ip=client_ip, email="", reason=str(exc.detail),
+                )
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
         # Attach user info to request state for downstream handlers
         request.state.user_id = payload.get("sub")
@@ -189,5 +221,11 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             f"role={request.state.user_role}, "
             f"path={request.method} {request.url.path}"
         )
+        if self.security_logger is not None:
+            self.security_logger.log_auth_success(
+                source_ip=client_ip,
+                user_id=str(request.state.user_id),
+                email=request.state.user_email or "",
+            )
 
         return await call_next(request)

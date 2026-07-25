@@ -9,9 +9,21 @@ FastAPI microservice providing:
 
 Uses EskomSePush API (https://eskomsepush.gumroad.com/l/api).
 Results cached for 15 minutes to respect API rate limits.
+
+SECURITY HARDENING (Module 2 — July 2026):
+  - CORS: Replaced allow_origins=["*"] with specific origins via security.setup
+  - Auth: API key required for service-to-service calls
+  - Input validation: /subscribe hardened with extra='forbid', SA phone
+    normalisation, and area-zone whitelist validation
+  - Audit logging: SecurityLogger emits structured JSON to stdout + DB
+  - Security headers: CSP, X-Frame-Options, etc. via SecurityHeadersMiddleware
+  - Rate limiting: 100 req/min per IP via RateLimiterMiddleware
+
+  See: security/setup.py, security/input_validation/validators.py
 """
 
 import os
+import sys
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -20,9 +32,14 @@ from functools import lru_cache
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from sqlalchemy import create_engine, text
+
+# Add project root to path for security imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+from security.setup import apply_security_middleware
+from security.input_validation.validators import validate_phone_sa, validate_area_zone
+from security.logging.security_logger import SecurityLogger
 
 load_dotenv()
 
@@ -35,12 +52,21 @@ app = FastAPI(
     version="1.0.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# Security audit logger — constructed before apply_security_middleware so
+# auth failures, rate-limit hits, API key usage, and validation failures
+# from every middleware layer emit real audit events (see security/setup.py).
+sec_log = SecurityLogger(engine=None, service_name="loadshedding")
+
+# Apply security middleware (replaces CORS wildcard)
+apply_security_middleware(
+    app,
+    enable_api_key=True,
+    cors_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        os.getenv("FRONTEND_URL", ""),
+    ],
+    security_logger=sec_log,
 )
 
 # ---------------------------------------------------------------------------
@@ -93,9 +119,21 @@ class ScheduleResponse(BaseModel):
 
 
 class SubscribeRequest(BaseModel):
-    area_zone: str
-    customer_id: Optional[str] = None
-    phone: Optional[str] = None
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    area_zone: str = Field(..., max_length=100)
+    customer_id: Optional[str] = Field(None, max_length=100)
+    phone: Optional[str] = Field(None, max_length=15, description="SA phone number (+27...)")
+
+    @field_validator("area_zone")
+    @classmethod
+    def zone_must_be_valid(cls, v):
+        return validate_area_zone(v)
+
+    @field_validator("phone")
+    @classmethod
+    def phone_must_be_sa(cls, v):
+        return validate_phone_sa(v)
 
 
 # ---------------------------------------------------------------------------

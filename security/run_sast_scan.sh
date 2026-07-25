@@ -87,13 +87,13 @@ fi
 # ---------------------------------------------------------------------------
 echo ""
 echo "── 4. npm audit (Node.js Dependency Scan) ──"
-if [ -f "apps/web/package.json" ]; then
-    cd apps/web
-    npm audit --json > "../../$REPORTS_DIR/npm_audit_report.json" 2>/dev/null || true
-    cd ../..
+if [ -f "frontend/package.json" ]; then
+    cd frontend
+    npm audit --json > "../$REPORTS_DIR/npm_audit_report.json" 2>/dev/null || true
+    cd ..
     echo "  ✓ Report saved to $REPORTS_DIR/npm_audit_report.json"
 else
-    echo "  ⚠ apps/web/package.json not found"
+    echo "  ⚠ frontend/package.json not found"
 fi
 
 # ---------------------------------------------------------------------------
@@ -101,20 +101,20 @@ fi
 # ---------------------------------------------------------------------------
 echo ""
 echo "── 5. ESLint Security Plugin ──"
-if [ -f "apps/web/package.json" ]; then
-    cd apps/web
+if [ -f "frontend/package.json" ]; then
+    cd frontend
     if command -v npx &> /dev/null; then
         npx eslint . --rule 'security/detect-object-injection: warn' \
             --rule 'security/detect-non-literal-regexp: warn' \
             --rule 'security/detect-non-literal-fs-filename: warn' \
             --rule 'security/detect-eval-with-expression: error' \
             --rule 'security/detect-child-process: warn' \
-            -f json -o "../../$REPORTS_DIR/eslint_security_report.json" 2>/dev/null || true
+            -f json -o "../$REPORTS_DIR/eslint_security_report.json" 2>/dev/null || true
         echo "  ✓ Report saved to $REPORTS_DIR/eslint_security_report.json"
     fi
-    cd ../..
+    cd ..
 else
-    echo "  ⚠ apps/web not found"
+    echo "  ⚠ frontend not found"
 fi
 
 # ---------------------------------------------------------------------------

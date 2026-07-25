@@ -15,11 +15,14 @@ Usage:
 import time
 import logging
 from collections import defaultdict
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from fastapi import Request, HTTPException
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
+
+if TYPE_CHECKING:
+    from security.logging.security_logger import SecurityLogger
 
 logger = logging.getLogger("security.rate_limiter")
 
@@ -38,11 +41,13 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         max_requests: int = 100,
         window_seconds: int = 60,
         exempt_paths: Optional[list[str]] = None,
+        security_logger: "Optional[SecurityLogger]" = None,
     ):
         super().__init__(app)
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.exempt_paths = exempt_paths or ["/health", "/docs", "/openapi.json", "/redoc"]
+        self.security_logger = security_logger
         self._requests: dict[str, list[float]] = defaultdict(list)
 
     def _get_client_ip(self, request: Request) -> str:
@@ -64,9 +69,16 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
             del self._requests[ip]
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # Skip rate limiting for exempt paths
+        # Skip rate limiting for exempt paths. Services mount health checks
+        # under their own prefix (/triage/health, /dispatch/health, ...),
+        # not bare "/health", so that one entry is matched by suffix —
+        # otherwise Docker's HEALTHCHECK could eventually get rate-limited.
+        path = request.url.path
         for exempt in self.exempt_paths:
-            if request.url.path.startswith(exempt):
+            if exempt == "/health":
+                if path.endswith("/health"):
+                    return await call_next(request)
+            elif path.startswith(exempt):
                 return await call_next(request)
 
         client_ip = self._get_client_ip(request)
@@ -87,9 +99,20 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
                 f"path={request.url.path}, "
                 f"count={len(self._requests[client_ip])}/{self.max_requests}"
             )
-            raise HTTPException(
+            if self.security_logger is not None:
+                self.security_logger.log_rate_limit_hit(
+                    source_ip=client_ip,
+                    endpoint=request.url.path,
+                    limit=self.max_requests,
+                )
+            # Note: raising HTTPException here would NOT be converted to a
+            # proper error response — Starlette's ExceptionMiddleware (which
+            # does that conversion) sits *inside* user-added middleware like
+            # this one, so the exception would propagate past it and surface
+            # as an unhandled 500 instead of 429. Build the response directly.
+            return JSONResponse(
                 status_code=429,
-                detail=f"Too many requests. Retry after {retry_after} seconds.",
+                content={"detail": f"Too many requests. Retry after {retry_after} seconds."},
                 headers={"Retry-After": str(retry_after)},
             )
 

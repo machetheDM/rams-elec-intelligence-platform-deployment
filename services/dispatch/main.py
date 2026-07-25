@@ -54,6 +54,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Security audit logger — constructed before apply_security_middleware so
+# auth failures, rate-limit hits, API key usage, and validation failures
+# from every middleware layer emit real audit events (see security/setup.py).
+sec_log = SecurityLogger(engine=None, service_name="dispatch")
+
 # Apply security middleware (replaces CORS wildcard)
 apply_security_middleware(
     app,
@@ -63,9 +68,8 @@ apply_security_middleware(
         "http://127.0.0.1:3000",
         os.getenv("FRONTEND_URL", ""),
     ],
+    security_logger=sec_log,
 )
-
-sec_log = SecurityLogger(engine=None, service_name="dispatch")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec")
 engine = create_engine(DATABASE_URL)

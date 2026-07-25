@@ -6,9 +6,22 @@ FastAPI microservice providing:
 
 Knowledge base: SANS 10142 summaries, service catalog, FAQ, load-shedding guide.
 Uses FAISS + sentence-transformers for retrieval, Groq llama-3.3-70b for generation.
+
+SECURITY HARDENING (Module 2 — July 2026):
+  - CORS: Replaced allow_origins=["*"] with specific origins via security.setup
+  - Auth: API key required for service-to-service calls
+  - Input validation: chat message sanitised against prompt-injection payloads
+    before it ever reaches the LLM (the highest-risk endpoint in this repo —
+    user text is injected directly into an LLM prompt)
+  - Audit logging: SecurityLogger emits structured JSON to stdout + DB
+  - Security headers: CSP, X-Frame-Options, etc. via SecurityHeadersMiddleware
+  - Rate limiting: 100 req/min per IP via RateLimiterMiddleware
+
+  See: security/setup.py, security/input_validation/validators.py
 """
 
 import os
+import sys
 import json
 import logging
 from datetime import datetime
@@ -17,9 +30,14 @@ from typing import Optional
 import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from sqlalchemy import create_engine, text
+
+# Add project root to path for security imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+from security.setup import apply_security_middleware
+from security.input_validation.validators import sanitize_prompt_input, MAX_MESSAGE_LENGTH
+from security.logging.security_logger import SecurityLogger
 
 load_dotenv()
 
@@ -32,12 +50,21 @@ app = FastAPI(
     version="1.0.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# Security audit logger — constructed before apply_security_middleware so
+# auth failures, rate-limit hits, API key usage, and validation failures
+# from every middleware layer emit real audit events (see security/setup.py).
+sec_log = SecurityLogger(engine=None, service_name="chatbot")
+
+# Apply security middleware (replaces CORS wildcard)
+apply_security_middleware(
+    app,
+    enable_api_key=True,
+    cors_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        os.getenv("FRONTEND_URL", ""),
+    ],
+    security_logger=sec_log,
 )
 
 # ---------------------------------------------------------------------------
@@ -108,9 +135,16 @@ def get_groq_client():
 # ---------------------------------------------------------------------------
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., description="User message")
-    customer_id: Optional[str] = None
-    conversation_history: list[dict] = Field(default_factory=list)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    message: str = Field(..., max_length=MAX_MESSAGE_LENGTH, description="User message")
+    customer_id: Optional[str] = Field(None, max_length=100)
+    conversation_history: list[dict] = Field(default_factory=list, max_length=20)
+
+    @field_validator("message")
+    @classmethod
+    def sanitize_message(cls, v):
+        return sanitize_prompt_input(v)
 
 
 class ChatResponse(BaseModel):
@@ -279,9 +313,17 @@ async def query(request: ChatRequest):
                 customer_context=customer_context or "No customer-specific data available.",
             )}]
 
-            # Add conversation history (last 6 messages)
+            # Add conversation history (last 6 messages). Only the "role"
+            # and "content" keys are trusted, role is restricted to
+            # user/assistant (a client-supplied "role": "system" message
+            # here would otherwise let an attacker inject a fake system
+            # prompt), and content is sanitised the same as a fresh message.
             for msg in request.conversation_history[-6:]:
-                messages.append(msg)
+                role = msg.get("role")
+                content = msg.get("content")
+                if role not in ("user", "assistant") or not isinstance(content, str):
+                    continue
+                messages.append({"role": role, "content": sanitize_prompt_input(content)})
 
             messages.append({"role": "user", "content": request.message})
 

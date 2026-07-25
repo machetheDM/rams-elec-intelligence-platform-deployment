@@ -39,8 +39,8 @@ services:
   # =============================================================================
   triage:
     build:
-      context: ./services/triage
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/triage/Dockerfile
     container_name: rams-elec-triage
     env_file: .env
     ports:
@@ -63,8 +63,8 @@ services:
   # =============================================================================
   loadshedding:
     build:
-      context: ./services/loadshedding
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/loadshedding/Dockerfile
     container_name: rams-elec-loadshedding
     env_file: .env
     ports:
@@ -87,8 +87,8 @@ services:
   # =============================================================================
   chatbot:
     build:
-      context: ./services/chatbot
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/chatbot/Dockerfile
     container_name: rams-elec-chatbot
     env_file: .env
     ports:
@@ -114,8 +114,8 @@ services:
   # =============================================================================
   dispatch:
     build:
-      context: ./services/dispatch
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/dispatch/Dockerfile
     container_name: rams-elec-dispatch
     env_file: .env
     ports:
@@ -138,7 +138,7 @@ services:
   # =============================================================================
   web:
     build:
-      context: ./apps/web
+      context: ./frontend
       dockerfile: Dockerfile
     container_name: rams-elec-web
     env_file: .env
@@ -150,6 +150,11 @@ services:
       - NEXT_PUBLIC_LOADSHEDDING_API_URL=http://loadshedding:8002
       - NEXT_PUBLIC_CHATBOT_API_URL=http://chatbot:8003
       - NEXT_PUBLIC_DISPATCH_API_URL=http://dispatch:8004
+      # Server-side only (no NEXT_PUBLIC_ prefix) — used by
+      # frontend/src/app/api/model-metrics/route.ts to call triage without
+      # exposing the internal API key to the browser.
+      - TRIAGE_SERVICE_URL=http://triage:8001
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-rams-elec-frontend-2026}
     depends_on:
       triage:
         condition: service_healthy
@@ -171,7 +176,7 @@ services:
   # =============================================================================
   streamlit:
     build:
-      context: ./apps/dashboard
+      context: ./dashboard
       dockerfile: Dockerfile
     container_name: rams-elec-streamlit
     env_file: .env

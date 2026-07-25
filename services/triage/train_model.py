@@ -1,16 +1,26 @@
 """
 XGBoost Quote Estimator — Model Training Script
 
-Trains on Gold layer data from PostgreSQL.
-Tracks experiments with MLflow.
-Saves model + SHAP explainer for the triage API.
+Trains on Gold layer data from PostgreSQL. Falls back to running the ETL's
+synthetic data generator through the same Bronze->Silver->Gold pipeline
+when no database is reachable or no completed jobs exist yet (e.g. local
+verification, CI, or before the client has real job history) — see
+load_training_data() / _load_synthetic_training_data() below.
+
+Tracks experiments with MLflow. Saves model + SHAP explainer + a
+metrics.json (served read-only by GET /triage/model-metrics in main.py)
+for the triage API.
 
 Run: python train_model.py
 """
 
 import os
+import sys
+import json
 import pickle
 import logging
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +33,8 @@ import xgboost as xgb
 import mlflow
 import mlflow.xgboost
 
+from feature_encoding import FEATURE_COLS, CATEGORY_MAP, ZONE_MAP, encode_features
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
@@ -34,90 +46,117 @@ MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
 MODEL_DIR = Path(__file__).parent / "model"
 MODEL_DIR.mkdir(exist_ok=True)
 
-FEATURE_COLS = [
-    "service_category_encoded",
-    "urgency_flag",
-    "area_zone_encoded",
-    "equipment_age_years",
-    "month",
-    "day_of_week",
-    "is_weekend",
-]
 
-CATEGORY_MAP = {
-    "electrical": 0, "refrigeration": 1, "emergency": 2,
-    "maintenance": 3, "installation": 4, "general": 5,
-}
-ZONE_MAP = {
-    "Sandton": 0, "Midrand": 1, "Centurion": 2, "Pretoria East": 3,
-    "Soweto": 4, "Polokwane": 5, "Mokopane": 6, "Bela-Bela": 7,
-}
+def _load_synthetic_training_data() -> pd.DataFrame:
+    """Generate synthetic jobs and run them through the real ETL pipeline
+    (Bronze -> Silver -> Gold) to produce Gold-layer training data offline —
+    reuses etl/scripts/generate_seed_data.py rather than duplicating it.
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../etl"))
+    from scripts.generate_seed_data import generate_synthetic_jobs
+    from extractors.excel import ExcelExtractor
+    from extractors.validator import DataValidator
+    from transformers.bronze import BronzeTransformer
+    from transformers.silver import SilverTransformer
+    from transformers.gold import GoldTransformer
+
+    df = generate_synthetic_jobs(200)
+
+    # generate_synthetic_jobs() doesn't emit install_date (it's job-record
+    # data, not an equipment registry), but GoldTransformer only computes
+    # equipment_age_years when that column is present — without it the
+    # feature would be silently absent from training entirely, not just
+    # zero. Synthesize a plausible install date (0-10 years before the
+    # job) so equipment_age_years carries real, varied signal.
+    rng = np.random.default_rng(42)
+    job_dates = pd.to_datetime(df["job_date"], errors="coerce")
+    df["install_date"] = (
+        job_dates - pd.to_timedelta(rng.integers(0, 3650, size=len(df)), unit="D")
+    ).dt.strftime("%Y-%m-%d")
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        xlsx_path = os.path.join(tmp_dir, "synthetic_jobs.xlsx")
+        df.to_excel(xlsx_path, index=False)
+        extracted = ExcelExtractor().extract(xlsx_path)
+
+    valid, _errors = DataValidator().validate_job_records(extracted)
+    bronze = BronzeTransformer().transform_jobs(valid)
+    silver = SilverTransformer().transform(bronze)
+    gold = GoldTransformer().transform(silver)
+
+    completed = gold[gold["actual_cost"].notna()] if "actual_cost" in gold.columns else gold
+    logger.info(f"Synthetic ETL pipeline produced {len(completed)} completed job records")
+    return completed
 
 
-def load_training_data() -> pd.DataFrame:
-    """Load Gold layer data from PostgreSQL."""
-    engine = create_engine(DATABASE_URL)
+def load_training_data() -> tuple[pd.DataFrame, str]:
+    """Load Gold layer data from PostgreSQL, falling back to the synthetic
+    ETL pipeline when no database is reachable or no completed jobs exist.
 
-    # Try gold_jobs table first
+    Returns (dataframe, data_source) — data_source is recorded in
+    metrics.json so the "Result" number is always traceable to real client
+    data vs. the disclosed synthetic fallback.
+    """
     try:
+        engine = create_engine(DATABASE_URL)
+
+        # Try gold_jobs table first
+        try:
+            with engine.connect() as conn:
+                result = conn.execute(text("SELECT * FROM gold_jobs WHERE actual_cost IS NOT NULL"))
+                rows = result.fetchall()
+            if rows:
+                columns = result.keys()
+                df = pd.DataFrame(rows, columns=columns)
+                logger.info(f"Loaded {len(df)} rows from gold_jobs table")
+                return encode_features(df), "postgres:gold_jobs"
+        except Exception:
+            logger.info("gold_jobs not available — falling back to jobs table")
+
+        # Fallback: query jobs + derive features manually
         with engine.connect() as conn:
-            result = conn.execute(text("SELECT * FROM gold_jobs WHERE actual_cost IS NOT NULL"))
+            result = conn.execute(text("""
+                SELECT
+                    j.id, j.status, j.urgency, j.area_zone, j.actual_cost, j.quoted_cost,
+                    j.scheduled_date, j.completed_date, j.created_at,
+                    st.category as service_category,
+                    e.install_date
+                FROM jobs j
+                JOIN service_types st ON j.service_type_id = st.id
+                LEFT JOIN equipment e ON j.equipment_id = e.id
+                WHERE j.status = 'complete' AND j.actual_cost IS NOT NULL
+            """))
             rows = result.fetchall()
+
         if rows:
             columns = result.keys()
             df = pd.DataFrame(rows, columns=columns)
-            logger.info(f"Loaded {len(df)} rows from gold_jobs table")
-            return df
-    except Exception:
-        logger.info("gold_jobs not available — falling back to jobs table")
 
-    # Fallback: query jobs + derive features manually
-    logger.info("gold_jobs table empty — building features from jobs table")
-    with engine.connect() as conn:
-        result = conn.execute(text("""
-            SELECT
-                j.id, j.status, j.urgency, j.area_zone, j.actual_cost, j.quoted_cost,
-                j.scheduled_date, j.completed_date, j.created_at,
-                st.category as service_category,
-                e.install_date
-            FROM jobs j
-            JOIN service_types st ON j.service_type_id = st.id
-            LEFT JOIN equipment e ON j.equipment_id = e.id
-            WHERE j.status = 'complete' AND j.actual_cost IS NOT NULL
-        """))
-        rows = result.fetchall()
+            df["scheduled_date"] = pd.to_datetime(df["scheduled_date"], errors="coerce")
+            df["completed_date"] = pd.to_datetime(df["completed_date"], errors="coerce")
+            df["install_date"] = pd.to_datetime(df["install_date"], errors="coerce")
 
-    if not rows:
-        logger.error("No training data available. Run the seed script first.")
-        return pd.DataFrame()
+            df["month"] = df["scheduled_date"].dt.month.fillna(6).astype(int)
+            df["day_of_week"] = df["scheduled_date"].dt.dayofweek.fillna(2).astype(int)
+            df["is_weekend"] = df["day_of_week"].isin([5, 6]).astype(int)
 
-    columns = result.keys()
-    df = pd.DataFrame(rows, columns=columns)
+            df["equipment_age_years"] = (
+                (df["scheduled_date"] - df["install_date"]).dt.days / 365.25
+            ).fillna(0).clip(0, 50)
 
-    # Feature engineering
-    df["service_category_encoded"] = df["service_category"].map(CATEGORY_MAP).fillna(5).astype(int)
-    df["urgency_flag"] = df["urgency"].isin(["emergency", "high"]).astype(int)
-    df["area_zone_encoded"] = df["area_zone"].map(ZONE_MAP).fillna(0).astype(int)
+            logger.info(f"Built {len(df)} training records from jobs table")
+            return encode_features(df), "postgres:jobs"
+    except Exception as e:
+        logger.warning(f"Database unavailable ({e}) — falling back to synthetic ETL pipeline")
 
-    df["scheduled_date"] = pd.to_datetime(df["scheduled_date"], errors="coerce")
-    df["completed_date"] = pd.to_datetime(df["completed_date"], errors="coerce")
-    df["install_date"] = pd.to_datetime(df["install_date"], errors="coerce")
-
-    df["month"] = df["scheduled_date"].dt.month.fillna(6).astype(int)
-    df["day_of_week"] = df["scheduled_date"].dt.dayofweek.fillna(2).astype(int)
-    df["is_weekend"] = df["day_of_week"].isin([5, 6]).astype(int)
-
-    df["equipment_age_years"] = (
-        (df["scheduled_date"] - df["install_date"]).dt.days / 365.25
-    ).fillna(0).clip(0, 50)
-
-    logger.info(f"Built {len(df)} training records from jobs table")
-    return df
+    logger.info("No database training data available — running synthetic ETL pipeline")
+    df = _load_synthetic_training_data()
+    return encode_features(df), "synthetic_etl_pipeline"
 
 
 def train():
     """Train XGBoost model with MLflow tracking."""
-    df = load_training_data()
+    df, data_source = load_training_data()
     if df.empty:
         logger.error("No training data. Aborting.")
         return
@@ -203,6 +242,28 @@ def train():
             pickle.dump(CATEGORY_MAP, f)
         with open(MODEL_DIR / "zone_map.pkl", "wb") as f:
             pickle.dump(ZONE_MAP, f)
+
+        # Save evaluation metrics — served read-only by
+        # GET /triage/model-metrics in main.py. This is the single source
+        # of truth for the quote estimator's published accuracy numbers;
+        # never hand-edit this file, only train_model.py writes it.
+        metrics = {
+            "trained_at": datetime.now(timezone.utc).isoformat(),
+            "training_samples": int(len(X_train)),
+            "test_samples": int(len(X_test)),
+            "data_source": data_source,
+            "mae": round(float(mae), 2),
+            "rmse": round(float(rmse), 2),
+            "r2": round(float(r2), 4),
+            "cv_mae": round(float(cv_mae), 2),
+            "cv_folds": 5,
+            "feature_importance": {
+                feat: round(float(score), 1) for feat, score in importance.items()
+            },
+        }
+        with open(MODEL_DIR / "metrics.json", "w") as f:
+            json.dump(metrics, f, indent=2)
+        logger.info(f"Metrics saved to {MODEL_DIR / 'metrics.json'}")
 
         # Generate SHAP explainer
         try:
