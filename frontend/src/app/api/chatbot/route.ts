@@ -15,14 +15,26 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "rams-elec-frontend-202
 export async function POST(request: NextRequest) {
   const body = await request.json();
 
-  const res = await fetch(`${CHATBOT_SERVICE_URL}/chatbot/query`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": INTERNAL_API_KEY,
-    },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+
+  try {
+    res = await fetch(`${CHATBOT_SERVICE_URL}/chatbot/query`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": INTERNAL_API_KEY,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    // Same reasoning as /api/model-metrics: a downed service is an
+    // expected state, not a crash. useChatbot surfaces this as its
+    // "trouble connecting" message with the emergency phone number.
+    return NextResponse.json(
+      { error: "Chatbot service unreachable" },
+      { status: 503 }
+    );
+  }
 
   const data = await res.json();
   return NextResponse.json(data, { status: res.status });

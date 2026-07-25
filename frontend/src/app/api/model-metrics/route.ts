@@ -14,10 +14,23 @@ const TRIAGE_SERVICE_URL = process.env.TRIAGE_SERVICE_URL || "http://localhost:8
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "rams-elec-frontend-2026";
 
 export async function GET() {
-  const res = await fetch(`${TRIAGE_SERVICE_URL}/triage/model-metrics`, {
-    headers: { "X-API-Key": INTERNAL_API_KEY },
-    cache: "no-store",
-  });
+  let res: Response;
+
+  try {
+    res = await fetch(`${TRIAGE_SERVICE_URL}/triage/model-metrics`, {
+      headers: { "X-API-Key": INTERNAL_API_KEY },
+      cache: "no-store",
+    });
+  } catch {
+    // The triage service being down is an expected operating state — the
+    // rest of the site works fine without it. Return a clean 503 rather
+    // than letting the ECONNREFUSED bubble up as an unhandled 500, which
+    // logs a scary red error in the browser console on every page load.
+    return NextResponse.json(
+      { error: "Triage service unreachable" },
+      { status: 503 }
+    );
+  }
 
   if (!res.ok) {
     return NextResponse.json(

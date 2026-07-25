@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!--
+    Favicon — served automatically by Next.js App Router via the `icon`
+    file convention (app/icon.svg), so no manual <link rel="icon"> needed.
+    Simplified from components/layout/Logo.tsx: at 16px the RE monogram is
+    illegible, so this keeps only the amber roofline on the dark ground,
+    which stays readable at tab size.
+  -->
+  <rect width="64" height="64" rx="12" fill="#0f172a" />
+  <path
+    d="M8 34 L32 14 L56 34"
+    stroke="#f59e0b"
+    stroke-width="7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  />
+  <path
+    d="M16 36 V50 H48 V36"
+    stroke="#f59e0b"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+    opacity="0.5"
+  />
+</svg>
