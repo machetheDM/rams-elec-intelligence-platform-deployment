@@ -151,9 +151,11 @@ services:
       - NEXT_PUBLIC_CHATBOT_API_URL=http://chatbot:8003
       - NEXT_PUBLIC_DISPATCH_API_URL=http://dispatch:8004
       # Server-side only (no NEXT_PUBLIC_ prefix) — used by
-      # frontend/src/app/api/model-metrics/route.ts to call triage without
-      # exposing the internal API key to the browser.
+      # frontend/src/app/api/model-metrics/route.ts and
+      # frontend/src/app/api/chatbot/route.ts to call backend services
+      # without exposing the internal API key to the browser.
       - TRIAGE_SERVICE_URL=http://triage:8001
+      - CHATBOT_SERVICE_URL=http://chatbot:8003
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-rams-elec-frontend-2026}
     depends_on:
       triage:

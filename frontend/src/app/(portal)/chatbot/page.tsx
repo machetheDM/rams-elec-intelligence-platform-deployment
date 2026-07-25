@@ -1,16 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  sources?: Array<{ excerpt: string; relevance: number }>;
-  escalate?: boolean;
-}
+import { useRef, useState, useEffect } from "react";
+import { useChatbot } from "@/hooks/useChatbot";
 
 export default function ChatbotPage() {
-  const [messages, setMessages] = useState<Message[]>([
+  const { messages, sending, sendMessage } = useChatbot([
     {
       role: "assistant",
       content:
@@ -23,63 +17,22 @@ export default function ChatbotPage() {
     },
   ]);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return;
-
-    const userMsg: Message = { role: "user", content: input };
-    setMessages((prev) => [...prev, userMsg]);
+  const handleSend = () => {
+    if (!input.trim() || sending) return;
+    sendMessage(input);
     setInput("");
-    setLoading(true);
-
-    try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_CHATBOT_API_URL || "http://localhost:8003"}/chatbot/query`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: input,
-            conversation_history: messages.map((m) => ({ role: m.role, content: m.content })),
-          }),
-        }
-      );
-
-      if (!res.ok) throw new Error("Chatbot request failed");
-      const data = await res.json();
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: data.reply,
-          sources: data.sources,
-          escalate: data.escalate_to_human,
-        },
-      ]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Sorry, I'm having trouble connecting. Please try again or call us at +27 71 101 8493.",
-        },
-      ]);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      handleSend();
     }
   };
 
@@ -118,7 +71,7 @@ export default function ChatbotPage() {
               </div>
             </div>
           ))}
-          {loading && (
+          {sending && (
             <div className="flex justify-start">
               <div className="bg-industrial-800 rounded-2xl px-4 py-3">
                 <div className="flex gap-1">
@@ -142,11 +95,11 @@ export default function ChatbotPage() {
               onKeyDown={handleKeyDown}
               placeholder="Ask about SANS compliance, cold room maintenance, load shedding..."
               className="flex-1 px-4 py-2.5 rounded-xl border border-industrial-700 bg-industrial-800 text-white text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-              disabled={loading}
+              disabled={sending}
             />
             <button
-              onClick={sendMessage}
-              disabled={!input.trim() || loading}
+              onClick={handleSend}
+              disabled={!input.trim() || sending}
               className="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-industrial-700 disabled:text-industrial-500 text-white text-sm font-semibold rounded-xl transition-all"
             >
               Send
