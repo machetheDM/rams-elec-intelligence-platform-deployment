@@ -76,26 +76,42 @@ const SERVICES: ServiceTile[] = [
 
 export default function ServicesBento() {
   return (
-    <section id="solutions" className="relative py-24 lg:py-36">
+    <section id="solutions" className="relative overflow-hidden py-24 lg:py-36">
       <div className="pointer-events-none absolute inset-0 bg-grid-fine mask-fade opacity-60" />
+      {/* Ambient amber wash anchored top-left, echoing the instrumentation panel below */}
+      <div className="pointer-events-none absolute -left-40 -top-40 h-96 w-96 rounded-full bg-brand-500/[0.06] blur-3xl" />
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="mb-16 max-w-2xl">
-          <span className="mono-label">02 / Expert Solutions</span>
-          <h2 className="section-heading mt-4">Professional Mastery</h2>
-          <p className="section-subheading mt-5">
-            Comprehensive electrical, refrigeration, and cooling services where reliability is
-            non-negotiable.
-          </p>
+        {/* Section header — split axis: narrative left, technical index right */}
+        <div className="mb-14 flex flex-col gap-8 lg:mb-20 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <span className="mono-label">02 / Expert Solutions</span>
+            <h2 className="section-heading mt-4 text-balance">Professional Mastery</h2>
+            <p className="section-subheading mt-5 text-pretty">
+              Comprehensive electrical, refrigeration, and cooling services where reliability is
+              non-negotiable.
+            </p>
+          </div>
+          <div className="flex items-center gap-4 lg:pb-2">
+            <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-industrial-500">
+              Capabilities
+            </span>
+            <span className="font-mono text-sm tabular-nums text-brand-500">
+              {String(SERVICES.length).padStart(2, "0")}
+            </span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+        {/* Accent rule ignites the grid */}
+        <div className="rule-accent mb-8" />
+
+        <div className="grid auto-rows-[minmax(0,1fr)] grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
           {SERVICES.map((service) => (
             <ServiceBentoTile key={service.index} service={service} />
           ))}
         </div>
 
-        <div className="mt-10">
+        <div className="mt-12">
           <Link href="/services" className="btn-outline">
             View Full Catalog
             <svg className="ml-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -114,41 +130,56 @@ function ServiceBentoTile({ service }: { service: ServiceTile }) {
   return (
     <Link
       href={href}
-      className={`tile-interactive group flex flex-col overflow-hidden p-7 ${span} ${
-        featured ? "lg:p-9" : ""
+      className={`tile-interactive group relative flex flex-col overflow-hidden p-7 ${span} ${
+        featured ? "lg:p-10" : ""
       }`}
     >
-      {/* Amber edge that ignites on hover */}
-      <span className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-500/0 to-transparent transition-all duration-500 group-hover:via-brand-500/60" />
+      {/* Blueprint texture — only the featured tile earns the full grid */}
+      {featured && (
+        <span className="pointer-events-none absolute inset-0 bg-grid opacity-[0.35] transition-opacity duration-500 group-hover:opacity-60" />
+      )}
 
-      <div className="flex items-start justify-between gap-4">
-        <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-500 transition-all duration-300 group-hover:bg-brand-500 group-hover:text-industrial-950">
+      {/* Amber edge that ignites on hover */}
+      <span className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-500/0 to-transparent transition-all duration-500 group-hover:via-brand-500/70" />
+
+      {/* Technical corner brackets — draw in on hover */}
+      <span className="pointer-events-none absolute left-3 top-3 h-4 w-4 border-l border-t border-brand-500/0 transition-all duration-300 group-hover:border-brand-500/50" />
+      <span className="pointer-events-none absolute bottom-3 right-3 h-4 w-4 border-b border-r border-brand-500/0 transition-all duration-300 group-hover:border-brand-500/50" />
+
+      <div className="relative flex items-start justify-between gap-4">
+        <span
+          className={`flex items-center justify-center rounded-lg bg-brand-500/10 text-brand-500 ring-1 ring-inset ring-brand-500/20 transition-all duration-300 group-hover:bg-brand-500 group-hover:text-industrial-950 group-hover:ring-brand-400 ${
+            featured ? "h-14 w-14" : "h-12 w-12"
+          }`}
+        >
           {icon}
         </span>
-        <span className="mono-label-muted pt-1">{index}</span>
+        <span className="mono-label-muted pt-1 transition-colors group-hover:text-brand-500/70">
+          {index}
+        </span>
       </div>
 
       <h3
-        className={`mt-6 font-bold text-white transition-colors group-hover:text-brand-400 ${
-          featured ? "text-2xl lg:text-3xl" : "text-lg"
+        className={`relative mt-6 font-bold text-white transition-colors group-hover:text-brand-400 ${
+          featured ? "text-2xl tracking-tight lg:text-3xl" : "text-lg"
         }`}
       >
         {title}
       </h3>
 
       <p
-        className={`mt-3 leading-relaxed text-industrial-400 ${
+        className={`relative mt-3 leading-relaxed text-industrial-400 ${
           featured ? "max-w-md text-base" : "text-sm"
         }`}
       >
         {blurb}
       </p>
 
-      <ul className={`mt-6 space-y-2 ${featured ? "lg:mt-8" : ""}`}>
+      <ul className={`relative mt-6 space-y-2.5 ${featured ? "lg:mt-8" : ""}`}>
         {items.map((item) => (
           <li key={item} className="flex items-center gap-2.5 text-sm text-industrial-300">
             <svg
-              className="h-3.5 w-3.5 flex-shrink-0 text-brand-600"
+              className="h-3.5 w-3.5 flex-shrink-0 text-brand-600 transition-colors group-hover:text-brand-400"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -160,10 +191,10 @@ function ServiceBentoTile({ service }: { service: ServiceTile }) {
         ))}
       </ul>
 
-      <div className="mt-auto flex items-center pt-8 font-mono text-[11px] uppercase tracking-[0.15em] text-brand-500/70 transition-colors group-hover:text-brand-400">
+      <div className="relative mt-auto flex items-center pt-8 font-mono text-[11px] uppercase tracking-[0.15em] text-brand-500/70 transition-colors group-hover:text-brand-400">
         Explore
         <svg
-          className="ml-1.5 h-3.5 w-3.5 transition-transform group-hover:translate-x-1"
+          className="ml-1.5 h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-1.5"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
