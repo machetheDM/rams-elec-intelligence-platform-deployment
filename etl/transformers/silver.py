@@ -22,45 +22,111 @@ class SilverTransformer:
     # Category mapping: free-text job descriptions → standardised categories
     CATEGORY_KEYWORDS = {
         "electrical": [
-            "electrical", "wiring", "db board", "distribution board", "circuit",
-            "plug", "socket", "light", "power", "coc", "compliance", "audit",
-            "surge", "inverter", "voltage", "earth", "ground",
+            "electrical",
+            "wiring",
+            "db board",
+            "distribution board",
+            "circuit",
+            "plug",
+            "socket",
+            "light",
+            "power",
+            "coc",
+            "compliance",
+            "audit",
+            "surge",
+            "inverter",
+            "voltage",
+            "earth",
+            "ground",
         ],
         "refrigeration": [
-            "cold room", "coldroom", "fridge", "freezer", "refrigeration",
-            "cooling", "chiller", "condenser", "evaporator", "compressor",
-            "temperature", "thermostat",
+            "cold room",
+            "coldroom",
+            "fridge",
+            "freezer",
+            "refrigeration",
+            "cooling",
+            "chiller",
+            "condenser",
+            "evaporator",
+            "compressor",
+            "temperature",
+            "thermostat",
         ],
         "hvac": [
-            "aircon", "air con", "air conditioner", "hvac", "ventilation",
-            "duct", "heating", "climate",
+            "aircon",
+            "air con",
+            "air conditioner",
+            "hvac",
+            "ventilation",
+            "duct",
+            "heating",
+            "climate",
         ],
         "emergency": [
-            "emergency", "urgent", "asap", "immediately", "no power",
-            "spark", "smoke", "burning", "fire", "flood", "leak",
-            "not working", "broken", "failed", "down",
+            "emergency",
+            "urgent",
+            "asap",
+            "immediately",
+            "no power",
+            "spark",
+            "smoke",
+            "burning",
+            "fire",
+            "flood",
+            "leak",
+            "not working",
+            "broken",
+            "failed",
+            "down",
         ],
         "maintenance": [
-            "maintenance", "service", "servicing", "check", "inspect",
-            "preventative", "routine", "annual", "quarterly",
+            "maintenance",
+            "service",
+            "servicing",
+            "check",
+            "inspect",
+            "preventative",
+            "routine",
+            "annual",
+            "quarterly",
         ],
         "installation": [
-            "install", "installation", "new", "setup", "fit", "build",
-            "construct", "upgrade", "replace",
+            "install",
+            "installation",
+            "new",
+            "setup",
+            "fit",
+            "build",
+            "construct",
+            "upgrade",
+            "replace",
         ],
     }
 
     # Area zone fuzzy matching
     AREA_ZONE_ALIASES = {
-        "sandton": "Sandton", "sandton cbd": "Sandton", "rivonia": "Sandton",
-        "midrand": "Midrand", "halfway house": "Midrand",
-        "centurion": "Centurion", "verwoerdburg": "Centurion",
-        "pretoria east": "Pretoria East", "pretoria": "Pretoria East",
-        "lynnwood": "Pretoria East", "garsfontein": "Pretoria East",
-        "soweto": "Soweto", "orlando": "Soweto",
-        "polokwane": "Polokwane", "pietersburg": "Polokwane",
-        "mokopane": "Mokopane", "potgietersrus": "Mokopane",
-        "bela-bela": "Bela-Bela", "bela bela": "Bela-Bela", "warmbaths": "Bela-Bela",
+        "sandton": "Sandton",
+        "sandton cbd": "Sandton",
+        "rivonia": "Sandton",
+        "midrand": "Midrand",
+        "halfway house": "Midrand",
+        "centurion": "Centurion",
+        "verwoerdburg": "Centurion",
+        "pretoria east": "Pretoria East",
+        "pretoria": "Pretoria East",
+        "lynnwood": "Pretoria East",
+        "garsfontein": "Pretoria East",
+        "soweto": "Soweto",
+        "orlando": "Soweto",
+        "polokwane": "Polokwane",
+        "pietersburg": "Polokwane",
+        "mokopane": "Mokopane",
+        "potgietersrus": "Mokopane",
+        "bela-bela": "Bela-Bela",
+        "bela bela": "Bela-Bela",
+        "warmbaths": "Bela-Bela",
     }
 
     @staticmethod
@@ -114,7 +180,12 @@ class SilverTransformer:
         if isinstance(value, (int, float)):
             return float(value) if value >= 0 else None
         if isinstance(value, str):
-            cleaned = value.replace("R", "").replace("r", "").replace(" ", "").replace(",", "")
+            cleaned = (
+                value.replace("R", "")
+                .replace("r", "")
+                .replace(" ", "")
+                .replace(",", "")
+            )
             try:
                 return float(cleaned)
             except ValueError:

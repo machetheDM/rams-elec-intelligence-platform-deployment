@@ -147,9 +147,11 @@ function StatusCard({ title, status, expiry, description }: {
     unknown: { label: "Unknown", className: "bg-industrial-700 text-industrial-400" },
   };
 
+  // eslint-disable-next-line security/detect-object-injection -- status is a component prop from a fixed set of literals, not user input
   const badge = badges[status] || badges.unknown;
 
   return (
+    // eslint-disable-next-line security/detect-object-injection -- status is a component prop from a fixed set of literals, not user input
     <div className={`p-4 rounded-xl border ${statusStyles[status] || statusStyles.unknown}`}>
       <div className="flex items-center justify-between mb-2">
         <h3 className="font-semibold text-white text-sm">{title}</h3>

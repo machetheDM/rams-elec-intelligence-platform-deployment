@@ -21,6 +21,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/*
+          Intentionally raw <link> tags for now — migrating to next/font/google
+          is a font-loading *mechanism* change best done alongside the v0.dev
+          visual redesign rather than as an isolated lint fix.
+        */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
       </head>
       <body className="antialiased bg-industrial-950 text-industrial-100 min-h-screen flex flex-col">

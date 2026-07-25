@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: cd frontend && npm ci && npx eslint . --max-warnings 0
+      - run: cd frontend && npm ci && npm run db:generate && npx eslint . --max-warnings 0
 
   test-python:
     name: Test Python (pytest + coverage)
@@ -71,14 +71,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: cd frontend && npm ci && npm run build
+      - run: cd frontend && npm ci && npm run db:generate && npm run build
 
   docker-build:
     name: Build Docker Images
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t rams-elec-web ./frontend
+      - run: docker build -t rams-elec-web -f frontend/Dockerfile .
       - run: docker build -t rams-elec-triage -f services/triage/Dockerfile .
       - run: docker build -t rams-elec-dispatch -f services/dispatch/Dockerfile .
       - run: docker build -t rams-elec-loadshedding -f services/loadshedding/Dockerfile .

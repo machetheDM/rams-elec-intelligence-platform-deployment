@@ -159,7 +159,6 @@ Important notes:
 - Homeowners should keep COCs for insurance and future property sale purposes.
 """,
     },
-
     # -------------------------------------------------------------------------
     # 2. Rams @Elec Service Catalog
     # -------------------------------------------------------------------------
@@ -239,7 +238,6 @@ Regular servicing is essential — a generator that fails during load shedding
 is worse than no generator at all. Test your generator monthly.
 """,
     },
-
     # -------------------------------------------------------------------------
     # 3. FAQ — Common Questions
     # -------------------------------------------------------------------------
@@ -340,7 +338,6 @@ A: Generators: test run monthly for 15–30 minutes under load. Inverters/UPS:
 check battery health quarterly. Schedule professional servicing every 6 months.
 """,
     },
-
     # -------------------------------------------------------------------------
     # 4. Load-Shedding Protection Guide
     # -------------------------------------------------------------------------
@@ -400,6 +397,7 @@ building from load-shedding surges.
 # =============================================================================
 # MAIN
 # =============================================================================
+
 
 def main():
     logger.info("Starting knowledge base embedding...")

@@ -92,7 +92,9 @@ class PostgresLoader:
                 cust_result = None
                 if phone and not pd.isna(phone):
                     cust_result = conn.execute(
-                        text("SELECT id, area_zone FROM customers WHERE phone = :phone"),
+                        text(
+                            "SELECT id, area_zone FROM customers WHERE phone = :phone"
+                        ),
                         {"phone": phone},
                     ).fetchone()
 
@@ -138,8 +140,16 @@ class PostgresLoader:
                         """),
                         {
                             "id": existing[0],
-                            "quoted_cost": float(cost_val) if cost_val and not pd.isna(cost_val) else None,
-                            "actual_cost": float(cost_val) if cost_val and not pd.isna(cost_val) else None,
+                            "quoted_cost": (
+                                float(cost_val)
+                                if cost_val and not pd.isna(cost_val)
+                                else None
+                            ),
+                            "actual_cost": (
+                                float(cost_val)
+                                if cost_val and not pd.isna(cost_val)
+                                else None
+                            ),
                             "job_notes": row.get("job_notes"),
                         },
                     )
@@ -156,7 +166,11 @@ class PostgresLoader:
                             "service_type_id": service_type_id,
                             "area_zone": area_zone,
                             "scheduled_date": str(job_date)[:10] if job_date else None,
-                            "quoted_cost": float(cost_val) if cost_val and not pd.isna(cost_val) else None,
+                            "quoted_cost": (
+                                float(cost_val)
+                                if cost_val and not pd.isna(cost_val)
+                                else None
+                            ),
                             "job_notes": row.get("job_notes"),
                         },
                     )
@@ -217,10 +231,19 @@ class PostgresLoader:
             conn.execute(text("TRUNCATE gold_jobs"))
 
             gold_cols = [
-                "service_category", "service_category_encoded", "urgency_flag",
-                "area_zone", "area_zone_encoded", "area_zone_group",
-                "equipment_age_years", "job_duration_days", "cost_per_hour",
-                "month", "day_of_week", "is_weekend", "quarter",
+                "service_category",
+                "service_category_encoded",
+                "urgency_flag",
+                "area_zone",
+                "area_zone_encoded",
+                "area_zone_group",
+                "equipment_age_years",
+                "job_duration_days",
+                "cost_per_hour",
+                "month",
+                "day_of_week",
+                "is_weekend",
+                "quarter",
             ]
             available = [c for c in gold_cols if c in df.columns]
 

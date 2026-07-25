@@ -39,7 +39,9 @@ from sqlalchemy import create_engine, text
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from security.setup import apply_security_middleware
 from security.input_validation.validators import (
-    validate_area_zone, validate_service_category, validate_urgency,
+    validate_area_zone,
+    validate_service_category,
+    validate_urgency,
 )
 from security.logging.security_logger import SecurityLogger
 
@@ -71,7 +73,9 @@ apply_security_middleware(
     security_logger=sec_log,
 )
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec"
+)
 engine = create_engine(DATABASE_URL)
 
 
@@ -131,7 +135,9 @@ async def recommend(request: DispatchRequest):
     try:
         with engine.connect() as conn:
             technicians = conn.execute(
-                text("SELECT id, name, skills, area_zones, max_daily_jobs FROM technicians WHERE active = true")
+                text(
+                    "SELECT id, name, skills, area_zones, max_daily_jobs FROM technicians WHERE active = true"
+                )
             ).fetchall()
 
             for tech in technicians:
@@ -144,22 +150,36 @@ async def recommend(request: DispatchRequest):
                 area_match = 1.0 if request.area_zone in (zones or []) else 0.3
 
                 # Workload: count current open/assigned/in_progress jobs
-                workload = conn.execute(
-                    text("SELECT COUNT(*) FROM jobs WHERE technician_id = :tid AND status IN ('open','assigned','in_progress')"),
-                    {"tid": tid},
-                ).scalar() or 0
+                workload = (
+                    conn.execute(
+                        text(
+                            "SELECT COUNT(*) FROM jobs WHERE technician_id = :tid AND status IN ('open','assigned','in_progress')"
+                        ),
+                        {"tid": tid},
+                    ).scalar()
+                    or 0
+                )
 
                 availability = max(0.0, 1.0 - (workload / max(max_daily, 1)))
 
                 # Area familiarity: past completed jobs in this zone
-                past_jobs = conn.execute(
-                    text("SELECT COUNT(*) FROM jobs WHERE technician_id = :tid AND area_zone = :zone AND status = 'complete'"),
-                    {"tid": tid, "zone": request.area_zone},
-                ).scalar() or 0
+                past_jobs = (
+                    conn.execute(
+                        text(
+                            "SELECT COUNT(*) FROM jobs WHERE technician_id = :tid AND area_zone = :zone AND status = 'complete'"
+                        ),
+                        {"tid": tid, "zone": request.area_zone},
+                    ).scalar()
+                    or 0
+                )
                 area_familiarity = min(1.0, past_jobs / 20.0)
 
                 # Combined: 40% skill, 40% availability, 20% area familiarity
-                combined = (0.4 * skill_match) + (0.4 * availability) + (0.2 * area_familiarity)
+                combined = (
+                    (0.4 * skill_match)
+                    + (0.4 * availability)
+                    + (0.2 * area_familiarity)
+                )
 
                 explanation_parts = []
                 if skill_match >= 1.0:
@@ -175,18 +195,20 @@ async def recommend(request: DispatchRequest):
                 if area_familiarity >= 0.5:
                     explanation_parts.append(f"experienced in {request.area_zone}")
 
-                recommendations.append(TechnicianScore(
-                    technician_id=tid,
-                    name=name,
-                    skills=skills or [],
-                    area_zones=zones or [],
-                    skill_match_score=round(skill_match, 3),
-                    availability_score=round(availability, 3),
-                    area_familiarity_score=round(area_familiarity, 3),
-                    combined_score=round(combined, 3),
-                    current_workload=workload,
-                    explanation="; ".join(explanation_parts),
-                ))
+                recommendations.append(
+                    TechnicianScore(
+                        technician_id=tid,
+                        name=name,
+                        skills=skills or [],
+                        area_zones=zones or [],
+                        skill_match_score=round(skill_match, 3),
+                        availability_score=round(availability, 3),
+                        area_familiarity_score=round(area_familiarity, 3),
+                        combined_score=round(combined, 3),
+                        current_workload=workload,
+                        explanation="; ".join(explanation_parts),
+                    )
+                )
 
     except Exception as e:
         logger.error(f"Dispatch query failed: {e}")
@@ -208,12 +230,16 @@ async def assign(request: AssignRequest):
         with engine.begin() as conn:
             # Verify technician exists and is active
             tech = conn.execute(
-                text("SELECT id, name FROM technicians WHERE id = :tid AND active = true"),
+                text(
+                    "SELECT id, name FROM technicians WHERE id = :tid AND active = true"
+                ),
                 {"tid": request.technician_id},
             ).fetchone()
 
             if not tech:
-                raise HTTPException(status_code=404, detail="Technician not found or inactive")
+                raise HTTPException(
+                    status_code=404, detail="Technician not found or inactive"
+                )
 
             # Update job
             result = conn.execute(
@@ -226,7 +252,9 @@ async def assign(request: AssignRequest):
             ).fetchone()
 
             if not result:
-                raise HTTPException(status_code=400, detail="Job not found or already assigned")
+                raise HTTPException(
+                    status_code=400, detail="Job not found or already assigned"
+                )
 
             # Log status change
             conn.execute(
@@ -234,7 +262,11 @@ async def assign(request: AssignRequest):
                     INSERT INTO job_status_history (job_id, old_status, new_status, changed_by, notes)
                     VALUES (:jid, 'open', 'assigned', :changed_by, :notes)
                 """),
-                {"jid": request.job_id, "changed_by": "admin", "notes": f"Assigned to {tech[1]}"},
+                {
+                    "jid": request.job_id,
+                    "changed_by": "admin",
+                    "notes": f"Assigned to {tech[1]}",
+                },
             )
 
         return {"status": "assigned", "job_id": request.job_id, "technician": tech[1]}
@@ -253,5 +285,6 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.getenv("DISPATCH_PORT", "8004"))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

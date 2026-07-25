@@ -16,7 +16,9 @@ from fastapi.testclient import TestClient
 _SERVICE_DIR = Path(__file__).resolve().parent
 if str(_SERVICE_DIR) not in sys.path:
     sys.path.insert(0, str(_SERVICE_DIR))
-_spec = importlib.util.spec_from_file_location("dispatch_main", _SERVICE_DIR / "main.py")
+_spec = importlib.util.spec_from_file_location(
+    "dispatch_main", _SERVICE_DIR / "main.py"
+)
 _dispatch_main = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_dispatch_main)
 
@@ -32,6 +34,10 @@ def test_health_endpoint_is_reachable_without_api_key():
 def test_recommend_rejects_requests_without_api_key():
     response = client.post(
         "/dispatch/recommend",
-        json={"service_category": "electrical", "urgency": "medium", "area_zone": "Sandton"},
+        json={
+            "service_category": "electrical",
+            "urgency": "medium",
+            "area_zone": "Sandton",
+        },
     )
     assert response.status_code == 401

@@ -31,29 +31,83 @@ def generate_synthetic_jobs(n: int = 200) -> pd.DataFrame:
 
     # Realistic SA data pools
     first_names = [
-        "Thabo", "Priya", "James", "Lerato", "David", "Sarah", "Michael",
-        "Fatima", "Sipho", "Nomsa", "Kabelo", "Anna", "Peter", "Grace",
-        "Johan", "Miriam", "Rajesh", "Tumi", "William", "Busisiwe",
-        "Andre", "Mapula", "Daniel", "Portia", "Isaac",
+        "Thabo",
+        "Priya",
+        "James",
+        "Lerato",
+        "David",
+        "Sarah",
+        "Michael",
+        "Fatima",
+        "Sipho",
+        "Nomsa",
+        "Kabelo",
+        "Anna",
+        "Peter",
+        "Grace",
+        "Johan",
+        "Miriam",
+        "Rajesh",
+        "Tumi",
+        "William",
+        "Busisiwe",
+        "Andre",
+        "Mapula",
+        "Daniel",
+        "Portia",
+        "Isaac",
     ]
     last_names = [
-        "Molefe", "Naidoo", "van der Merwe", "Khumalo", "Nkosi", "Botha",
-        "Mahlangu", "Patel", "Dlamini", "Zulu", "Mokoena", "Ramaphosa",
-        "Mahlatji", "Ledwaba", "Pretorius", "Sebata", "Govender", "Molepo",
-        "Mabaso", "Ndlovu", "du Toit", "Mothapo", "Mthembu", "Chauke",
+        "Molefe",
+        "Naidoo",
+        "van der Merwe",
+        "Khumalo",
+        "Nkosi",
+        "Botha",
+        "Mahlangu",
+        "Patel",
+        "Dlamini",
+        "Zulu",
+        "Mokoena",
+        "Ramaphosa",
+        "Mahlatji",
+        "Ledwaba",
+        "Pretorius",
+        "Sebata",
+        "Govender",
+        "Molepo",
+        "Mabaso",
+        "Ndlovu",
+        "du Toit",
+        "Mothapo",
+        "Mthembu",
+        "Chauke",
     ]
 
     service_types = [
-        "Cold Room Installation", "Cold Room Repair", "HVAC Installation",
-        "HVAC Maintenance", "Emergency Electrical Repair",
-        "Electrical Compliance Audit", "Distribution Board Upgrade",
-        "Generator Installation", "Generator Service", "Industrial Wiring",
-        "Surge Protection Installation", "Preventative Maintenance Visit",
+        "Cold Room Installation",
+        "Cold Room Repair",
+        "HVAC Installation",
+        "HVAC Maintenance",
+        "Emergency Electrical Repair",
+        "Electrical Compliance Audit",
+        "Distribution Board Upgrade",
+        "Generator Installation",
+        "Generator Service",
+        "Industrial Wiring",
+        "Surge Protection Installation",
+        "Preventative Maintenance Visit",
     ]
 
     area_zones = [
-        "Sandton", "Midrand", "Centurion", "Pretoria East", "Soweto",
-        "Polokwane", "Mokopane", "Bela-Bela",
+        "Sandton",
+        "Midrand",
+        "Centurion",
+        "Pretoria East",
+        "Soweto",
+        "Polokwane",
+        "Mokopane",
+        "Bela-Bela",
     ]
 
     urgencies = ["low", "medium", "high", "emergency"]
@@ -67,7 +121,9 @@ def generate_synthetic_jobs(n: int = 200) -> pd.DataFrame:
     for i in range(n):
         days_ago = np.random.randint(1, 365)
         job_date = base_date - timedelta(days=days_ago)
-        customer_name = f"{np.random.choice(first_names)} {np.random.choice(last_names)}"
+        customer_name = (
+            f"{np.random.choice(first_names)} {np.random.choice(last_names)}"
+        )
         phone = f"+2783{np.random.randint(1000000, 9999999)}"
         area = np.random.choice(area_zones)
         service = np.random.choice(service_types)
@@ -114,23 +170,27 @@ def generate_synthetic_jobs(n: int = 200) -> pd.DataFrame:
             completed_days = np.random.randint(1, 14)
             completed_date = job_date + timedelta(days=completed_days)
 
-        records.append({
-            "customer_name": customer_name,
-            "customer_phone": phone,
-            "address": f"{np.random.randint(1, 200)} {np.random.choice(['Main', 'Church', 'Market', 'Voortrekker', 'Nelson Mandela'])} St, {area}",
-            "area_zone": area,
-            "service_type": service,
-            "job_date": date_str,
-            "scheduled_date": date_str,
-            "completed_date": completed_date.strftime("%Y-%m-%d") if completed_date else "",
-            "cost": cost_str,
-            "quoted_cost": round(cost * np.random.uniform(0.9, 1.1), 2),
-            "actual_cost": cost if status == "complete" else "",
-            "technician_name": f"Tech {np.random.randint(1, 6)}",
-            "status": status,
-            "urgency": urgency,
-            "job_notes": f"{service} at {area}. {urgency} priority.",
-        })
+        records.append(
+            {
+                "customer_name": customer_name,
+                "customer_phone": phone,
+                "address": f"{np.random.randint(1, 200)} {np.random.choice(['Main', 'Church', 'Market', 'Voortrekker', 'Nelson Mandela'])} St, {area}",
+                "area_zone": area,
+                "service_type": service,
+                "job_date": date_str,
+                "scheduled_date": date_str,
+                "completed_date": (
+                    completed_date.strftime("%Y-%m-%d") if completed_date else ""
+                ),
+                "cost": cost_str,
+                "quoted_cost": round(cost * np.random.uniform(0.9, 1.1), 2),
+                "actual_cost": cost if status == "complete" else "",
+                "technician_name": f"Tech {np.random.randint(1, 6)}",
+                "status": status,
+                "urgency": urgency,
+                "job_notes": f"{service} at {area}. {urgency} priority.",
+            }
+        )
 
     return pd.DataFrame(records)
 
@@ -177,7 +237,9 @@ def run_pipeline_test():
     if not silver.empty:
         print(f"  Columns: {list(silver.columns)}")
         if "service_category" in silver.columns:
-            print(f"  Categories: {silver['service_category'].value_counts().to_dict()}")
+            print(
+                f"  Categories: {silver['service_category'].value_counts().to_dict()}"
+            )
 
     # Step 6: Gold
     print("\n[6/6] Gold transformation...")

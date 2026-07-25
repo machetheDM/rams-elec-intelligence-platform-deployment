@@ -35,8 +35,7 @@ export const authConfig: NextAuthConfig = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      // @ts-expect-error - NextAuth v5 beta Credentials API
-      async authorize(credentials: any) {
+      async authorize(credentials: Record<string, unknown> | undefined) {
         if (!credentials?.email || !credentials?.password) return null;
 
         const email = credentials.email as string;
@@ -56,8 +55,10 @@ export const authConfig: NextAuthConfig = {
           email: user.email ?? "",
           name: user.name,
           role: user.role,
-          customerId: user.customerId,
-          technicianId: user.technicianId,
+          // NextAuth's User type declares these optional (`?: string`), not
+          // nullable — Prisma returns `null` for unset columns, so convert.
+          customerId: user.customerId ?? undefined,
+          technicianId: user.technicianId ?? undefined,
         };
       },
     }),

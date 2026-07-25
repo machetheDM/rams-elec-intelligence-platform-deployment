@@ -36,7 +36,10 @@ from sqlalchemy import create_engine, text
 # Add project root to path for security imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from security.setup import apply_security_middleware
-from security.input_validation.validators import sanitize_prompt_input, MAX_MESSAGE_LENGTH
+from security.input_validation.validators import (
+    sanitize_prompt_input,
+    MAX_MESSAGE_LENGTH,
+)
 from security.logging.security_logger import SecurityLogger
 
 load_dotenv()
@@ -70,7 +73,9 @@ apply_security_middleware(
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec"
+)
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "./knowledge_base/faiss_index")
 engine = create_engine(DATABASE_URL)
 
@@ -102,7 +107,9 @@ def load_vectorstore():
             logger.info(f"FAISS index loaded from {FAISS_INDEX_PATH}")
             return True
         else:
-            logger.warning(f"FAISS index not found at {FAISS_INDEX_PATH}. Run embed_knowledge_base.py first.")
+            logger.warning(
+                f"FAISS index not found at {FAISS_INDEX_PATH}. Run embed_knowledge_base.py first."
+            )
             return False
     except Exception as e:
         logger.error(f"Failed to load vectorstore: {e}")
@@ -124,6 +131,7 @@ def get_groq_client():
     if groq_client is None:
         try:
             from groq import Groq
+
             groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         except Exception as e:
             logger.warning(f"Groq init failed: {e}")
@@ -133,6 +141,7 @@ def get_groq_client():
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
 # ---------------------------------------------------------------------------
+
 
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -157,6 +166,7 @@ class ChatResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Customer Context
 # ---------------------------------------------------------------------------
+
 
 def get_customer_context(customer_id: str) -> str:
     """Fetch customer's equipment and recent jobs for context injection."""
@@ -212,11 +222,27 @@ def get_customer_context(customer_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 ESCALATION_KEYWORDS = [
-    "site visit", "come to my", "send someone", "need a technician",
-    "certificate", "coc", "compliance certificate", "legal",
-    "emergency", "fire", "sparks", "burning", "smoke", "shock",
-    "install", "installation", "replace", "upgrade my",
-    "quote for", "how much to", "price for",
+    "site visit",
+    "come to my",
+    "send someone",
+    "need a technician",
+    "certificate",
+    "coc",
+    "compliance certificate",
+    "legal",
+    "emergency",
+    "fire",
+    "sparks",
+    "burning",
+    "smoke",
+    "shock",
+    "install",
+    "installation",
+    "replace",
+    "upgrade my",
+    "quote for",
+    "how much to",
+    "price for",
 ]
 
 
@@ -224,20 +250,38 @@ def should_escalate(message: str) -> tuple[bool, Optional[str]]:
     """Determine if the query should be escalated to a human technician."""
     msg_lower = message.lower()
 
-    if any(kw in msg_lower for kw in ["emergency", "fire", "sparks", "burning", "smoke", "shock"]):
-        return True, "This appears to be an emergency situation. A technician should assess this immediately."
+    if any(
+        kw in msg_lower
+        for kw in ["emergency", "fire", "sparks", "burning", "smoke", "shock"]
+    ):
+        return (
+            True,
+            "This appears to be an emergency situation. A technician should assess this immediately.",
+        )
 
-    if any(kw in msg_lower for kw in ["site visit", "come to", "send someone", "need a technician"]):
+    if any(
+        kw in msg_lower
+        for kw in ["site visit", "come to", "send someone", "need a technician"]
+    ):
         return True, "This requires an on-site visit from a qualified technician."
 
     if any(kw in msg_lower for kw in ["certificate", "coc", "compliance certificate"]):
-        return True, "Compliance certificates require a registered electrician's assessment and signature."
+        return (
+            True,
+            "Compliance certificates require a registered electrician's assessment and signature.",
+        )
 
     if any(kw in msg_lower for kw in ["install", "installation", "replace", "upgrade"]):
-        return True, "Installation and replacement work requires a site assessment for accurate quoting."
+        return (
+            True,
+            "Installation and replacement work requires a site assessment for accurate quoting.",
+        )
 
     if any(kw in msg_lower for kw in ["quote", "how much", "price", "cost to"]):
-        return True, "For an accurate quote, a technician needs to assess your specific setup."
+        return (
+            True,
+            "For an accurate quote, a technician needs to assess your specific setup.",
+        )
 
     return False, None
 
@@ -292,7 +336,9 @@ async def query(request: ChatRequest):
     retrieved_docs = []
     if vectorstore is not None:
         try:
-            docs_with_scores = vectorstore.similarity_search_with_score(request.message, k=5)
+            docs_with_scores = vectorstore.similarity_search_with_score(
+                request.message, k=5
+            )
             retrieved_docs = [
                 {"content": doc.page_content, "score": float(score)}
                 for doc, score in docs_with_scores
@@ -301,17 +347,27 @@ async def query(request: ChatRequest):
             logger.error(f"FAISS retrieval failed: {e}")
 
     # Build context
-    context = "\n\n---\n\n".join([d["content"] for d in retrieved_docs]) if retrieved_docs else "No relevant knowledge base articles found."
+    context = (
+        "\n\n---\n\n".join([d["content"] for d in retrieved_docs])
+        if retrieved_docs
+        else "No relevant knowledge base articles found."
+    )
 
     # Generate response via Groq
     client = get_groq_client()
     if client:
         try:
             # Build conversation messages
-            messages = [{"role": "system", "content": RAG_SYSTEM_PROMPT.format(
-                context=context,
-                customer_context=customer_context or "No customer-specific data available.",
-            )}]
+            messages = [
+                {
+                    "role": "system",
+                    "content": RAG_SYSTEM_PROMPT.format(
+                        context=context,
+                        customer_context=customer_context
+                        or "No customer-specific data available.",
+                    ),
+                }
+            ]
 
             # Add conversation history (last 6 messages). Only the "role"
             # and "content" keys are trusted, role is restricted to
@@ -323,7 +379,9 @@ async def query(request: ChatRequest):
                 content = msg.get("content")
                 if role not in ("user", "assistant") or not isinstance(content, str):
                     continue
-                messages.append({"role": role, "content": sanitize_prompt_input(content)})
+                messages.append(
+                    {"role": role, "content": sanitize_prompt_input(content)}
+                )
 
             messages.append({"role": "user", "content": request.message})
 
@@ -359,7 +417,9 @@ async def query(request: ChatRequest):
                     {
                         "cid": request.customer_id,
                         "msg": reply,
-                        "sources": json.dumps(retrieved_docs[:3]) if retrieved_docs else None,
+                        "sources": (
+                            json.dumps(retrieved_docs[:3]) if retrieved_docs else None
+                        ),
                     },
                 )
         except Exception as e:
@@ -380,7 +440,9 @@ async def query(request: ChatRequest):
 
 def _escalation_response(message: str, reason: str) -> str:
     """Generate escalation response."""
-    if "emergency" in message.lower() or any(kw in message.lower() for kw in ["fire", "sparks", "burning", "smoke", "shock"]):
+    if "emergency" in message.lower() or any(
+        kw in message.lower() for kw in ["fire", "sparks", "burning", "smoke", "shock"]
+    ):
         return (
             "🚨 **This sounds like an emergency situation.**\n\n"
             "Please call our emergency line immediately: **+27 71 101 8493**\n\n"
@@ -407,7 +469,10 @@ def _fallback_response(message: str, docs: list[dict]) -> str:
     msg_lower = message.lower()
 
     # FAQ pattern matching
-    if any(kw in msg_lower for kw in ["load shedding", "loadshedding", "power cut", "outage"]):
+    if any(
+        kw in msg_lower
+        for kw in ["load shedding", "loadshedding", "power cut", "outage"]
+    ):
         return (
             "**Load Shedding Protection**\n\n"
             "To protect your equipment during load shedding:\n"
@@ -446,7 +511,10 @@ def _fallback_response(message: str, docs: list[dict]) -> str:
         )
 
     if docs:
-        return docs[0]["content"][:500] + "\n\n---\n*This is an automated response. For specific advice, please contact our team.*"
+        return (
+            docs[0]["content"][:500]
+            + "\n\n---\n*This is an automated response. For specific advice, please contact our team.*"
+        )
 
     return (
         "Thank you for your question! I'm the Rams @Elec AI assistant.\n\n"
@@ -473,5 +541,6 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.getenv("CHATBOT_PORT", "8003"))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

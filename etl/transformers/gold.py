@@ -47,11 +47,13 @@ class GoldTransformer:
 
         # Job duration in days
         if "completed_date" in gold.columns and "job_date" in gold.columns:
-            gold["completed_date"] = pd.to_datetime(gold["completed_date"], errors="coerce")
+            gold["completed_date"] = pd.to_datetime(
+                gold["completed_date"], errors="coerce"
+            )
             gold["job_date"] = pd.to_datetime(gold["job_date"], errors="coerce")
             gold["job_duration_days"] = (
-                (gold["completed_date"] - gold["job_date"]).dt.total_seconds() / 86400
-            )
+                gold["completed_date"] - gold["job_date"]
+            ).dt.total_seconds() / 86400
             gold["job_duration_days"] = gold["job_duration_days"].clip(0, 365)
 
         # Cost per hour (use clean cost if available)
@@ -60,22 +62,28 @@ class GoldTransformer:
             gold["cost_per_hour"] = gold[cost_col] / gold.get(
                 "typical_duration_hours", pd.Series([4] * len(gold))
             )
-            gold["cost_per_hour"] = gold["cost_per_hour"].replace([np.inf, -np.inf], np.nan)
+            gold["cost_per_hour"] = gold["cost_per_hour"].replace(
+                [np.inf, -np.inf], np.nan
+            )
 
         # Area zone group
         if "area_zone" in gold.columns:
-            gold["area_zone_group"] = gold["area_zone"].map(self.AREA_ZONE_GROUPS).fillna("Other")
+            gold["area_zone_group"] = (
+                gold["area_zone"].map(self.AREA_ZONE_GROUPS).fillna("Other")
+            )
 
         # Urgency flag
         if "urgency" in gold.columns:
-            gold["urgency_flag"] = gold["urgency"].str.lower().map(self.URGENCY_MAP).fillna(0).astype(int)
+            gold["urgency_flag"] = (
+                gold["urgency"].str.lower().map(self.URGENCY_MAP).fillna(0).astype(int)
+            )
 
         # Equipment age at service
         if "install_date" in gold.columns and "job_date" in gold.columns:
             gold["install_date"] = pd.to_datetime(gold["install_date"], errors="coerce")
             gold["equipment_age_days"] = (
-                (gold["job_date"] - gold["install_date"]).dt.total_seconds() / 86400
-            )
+                gold["job_date"] - gold["install_date"]
+            ).dt.total_seconds() / 86400
             gold["equipment_age_years"] = gold["equipment_age_days"] / 365.25
             gold["equipment_age_years"] = gold["equipment_age_years"].clip(0, 50)
 
@@ -102,7 +110,9 @@ class GoldTransformer:
         gold["_gold_processed_at"] = datetime.now().isoformat()
         return gold
 
-    def get_ml_features(self, gold_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series | None]:
+    def get_ml_features(
+        self, gold_df: pd.DataFrame
+    ) -> tuple[pd.DataFrame, pd.Series | None]:
         """Extract feature matrix X and target vector y for ML training.
 
         Features: service_category_encoded, urgency_flag, area_zone_encoded,
@@ -130,7 +140,11 @@ class GoldTransformer:
                 X[col] = X[col].fillna(X[col].median())
 
         y = None
-        target_col = "actual_cost" if "actual_cost" in gold_df.columns else "cost_clean" if "cost_clean" in gold_df.columns else None
+        target_col = (
+            "actual_cost"
+            if "actual_cost" in gold_df.columns
+            else "cost_clean" if "cost_clean" in gold_df.columns else None
+        )
         if target_col and target_col in gold_df.columns:
             y = gold_df[target_col].copy()
 

@@ -46,8 +46,8 @@ export default function LoadSheddingWidget() {
       if (!res.ok) throw new Error("Failed to fetch status");
       const data = await res.json();
       setStatus(data);
-    } catch (err: any) {
-      setError(err.message || "Could not fetch load-shedding status");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not fetch load-shedding status");
     } finally {
       setLoading(false);
     }
@@ -82,6 +82,7 @@ export default function LoadSheddingWidget() {
 
   const stageBadge = (stage: number | null) => {
     if (stage === null || stage === undefined) return null;
+    // eslint-disable-next-line security/detect-object-injection -- stage is a number, not user-controlled
     const colorClass = STAGE_COLORS[stage] || "bg-gray-100 text-gray-800 border-gray-300";
     return (
       <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold border ${colorClass}`}>
@@ -187,7 +188,7 @@ export default function LoadSheddingWidget() {
               </button>
             ) : (
               <p className="text-center text-sm text-green-400 font-medium">
-                <svg className="w-4 h-4 inline-block mr-1 -mt-0.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> You're subscribed to alerts for {status.area_zone}
+                <svg className="w-4 h-4 inline-block mr-1 -mt-0.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> You&apos;re subscribed to alerts for {status.area_zone}
               </p>
             )}
 

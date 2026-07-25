@@ -43,9 +43,12 @@ from sqlalchemy import create_engine, text
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from security.setup import apply_security_middleware
 from security.input_validation.validators import (
-    validate_phone_sa, validate_area_zone,
-    validate_service_category, validate_urgency,
-    sanitize_prompt_input, MAX_MESSAGE_LENGTH,
+    validate_phone_sa,
+    validate_area_zone,
+    validate_service_category,
+    validate_urgency,
+    sanitize_prompt_input,
+    MAX_MESSAGE_LENGTH,
 )
 from security.logging.security_logger import SecurityLogger
 from feature_encoding import FEATURE_COLS, CATEGORY_MAP, ZONE_MAP, encode_urgency_flag
@@ -81,7 +84,9 @@ apply_security_middleware(
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec"
+)
 engine = create_engine(DATABASE_URL)
 
 # ---------------------------------------------------------------------------
@@ -95,9 +100,12 @@ def get_groq_client():
     if groq_client is None:
         try:
             from groq import Groq
+
             groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         except ImportError:
-            logger.warning("groq package not installed — classification will use fallback")
+            logger.warning(
+                "groq package not installed — classification will use fallback"
+            )
         except Exception as e:
             logger.warning(f"Groq init failed: {e} — using fallback classification")
     return groq_client
@@ -115,14 +123,19 @@ def load_model():
     """Load trained XGBoost model or return None if not trained yet."""
     global xgb_model, shap_explainer
     import pickle
-    model_path = os.path.join(os.path.dirname(__file__), "model", "xgb_quote_estimator.pkl")
+
+    model_path = os.path.join(
+        os.path.dirname(__file__), "model", "xgb_quote_estimator.pkl"
+    )
     if os.path.exists(model_path):
         import xgboost as xgb
+
         xgb_model = xgb.XGBRegressor()
         xgb_model.load_model(model_path)
         logger.info("XGBoost model loaded")
         try:
             import shap
+
             shap_explainer = shap.TreeExplainer(xgb_model)
             logger.info("SHAP explainer initialised")
         except Exception as e:
@@ -140,12 +153,17 @@ load_model()
 # Pydantic Schemas
 # ---------------------------------------------------------------------------
 
+
 class InquiryInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    raw_message: str = Field(..., max_length=MAX_MESSAGE_LENGTH, description="Raw inquiry text from customer")
+    raw_message: str = Field(
+        ..., max_length=MAX_MESSAGE_LENGTH, description="Raw inquiry text from customer"
+    )
     source: str = Field(default="web_form", max_length=50, description="Source channel")
     customer_name: Optional[str] = Field(None, max_length=100)
-    customer_phone: Optional[str] = Field(None, max_length=15, description="SA phone number (+27...)")
+    customer_phone: Optional[str] = Field(
+        None, max_length=15, description="SA phone number (+27...)"
+    )
 
     @field_validator("customer_phone")
     @classmethod
@@ -253,10 +271,14 @@ async def classify_inquiry(inquiry: InquiryInput):
         try:
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{
-                    "role": "user",
-                    "content": CLASSIFICATION_PROMPT.format(message=inquiry.raw_message),
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": CLASSIFICATION_PROMPT.format(
+                            message=inquiry.raw_message
+                        ),
+                    }
+                ],
                 temperature=0.1,
                 max_tokens=300,
             )
@@ -267,10 +289,14 @@ async def classify_inquiry(inquiry: InquiryInput):
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
             result = json.loads(content)
-            logger.info(f"Groq classification: {result['service_category']} / {result['urgency']}")
+            logger.info(
+                f"Groq classification: {result['service_category']} / {result['urgency']}"
+            )
             return ClassificationResult(**result)
         except Exception as e:
-            logger.error(f"Groq classification failed: {e}, falling back to keyword classifier")
+            logger.error(
+                f"Groq classification failed: {e}, falling back to keyword classifier"
+            )
 
     # Fallback: keyword-based classification
     return _keyword_classify(inquiry.raw_message)
@@ -281,10 +307,30 @@ def _keyword_classify(message: str) -> ClassificationResult:
     msg = message.lower()
 
     # Urgency detection
-    emergency_keywords = ["no power", "spark", "burning", "smoke", "fire", "flood",
-                          "emergency", "urgent", "asap", "immediately", "not cooling",
-                          "perishable", "alarm going off", "since 3am"]
-    high_keywords = ["not working", "broken", "failed", "leaking", "tripping", "flickering"]
+    emergency_keywords = [
+        "no power",
+        "spark",
+        "burning",
+        "smoke",
+        "fire",
+        "flood",
+        "emergency",
+        "urgent",
+        "asap",
+        "immediately",
+        "not cooling",
+        "perishable",
+        "alarm going off",
+        "since 3am",
+    ]
+    high_keywords = [
+        "not working",
+        "broken",
+        "failed",
+        "leaking",
+        "tripping",
+        "flickering",
+    ]
 
     if any(kw in msg for kw in emergency_keywords):
         urgency = "emergency"
@@ -296,13 +342,26 @@ def _keyword_classify(message: str) -> ClassificationResult:
         urgency = "medium"
 
     # Service category
-    if any(kw in msg for kw in ["cold room", "fridge", "freezer", "refrigeration", "cooling", "chiller"]):
+    if any(
+        kw in msg
+        for kw in [
+            "cold room",
+            "fridge",
+            "freezer",
+            "refrigeration",
+            "cooling",
+            "chiller",
+        ]
+    ):
         category = "refrigeration"
     elif any(kw in msg for kw in ["aircon", "air con", "hvac", "ventilation", "duct"]):
         category = "refrigeration"
     elif any(kw in msg for kw in ["install", "new", "setup", "fit", "build"]):
         category = "installation"
-    elif any(kw in msg for kw in ["maintenance", "service", "servicing", "checkup", "inspect"]):
+    elif any(
+        kw in msg
+        for kw in ["maintenance", "service", "servicing", "checkup", "inspect"]
+    ):
         category = "maintenance"
     elif any(kw in msg for kw in ["emergency", "urgent", "no power", "spark", "smoke"]):
         category = "emergency"
@@ -321,8 +380,17 @@ def _keyword_classify(message: str) -> ClassificationResult:
         equipment.append("electrical_panel")
 
     # Area zone detection
-    area_zones = ["sandton", "midrand", "centurion", "pretoria east", "soweto",
-                  "polokwane", "mokopane", "bela-bela", "bela bela"]
+    area_zones = [
+        "sandton",
+        "midrand",
+        "centurion",
+        "pretoria east",
+        "soweto",
+        "polokwane",
+        "mokopane",
+        "bela-bela",
+        "bela bela",
+    ]
     area_zone = None
     for zone in area_zones:
         if zone in msg:
@@ -409,7 +477,9 @@ async def estimate_cost(input_data: CostEstimateInput):
                 ]
                 explanation = f"Estimate based on {similar_count} similar jobs. Key factors: {'; '.join(top_factors)}."
             else:
-                explanation = f"Estimate based on {similar_count} similar historical jobs."
+                explanation = (
+                    f"Estimate based on {similar_count} similar historical jobs."
+                )
 
             variance = abs(pred * 0.2)
             return CostEstimateResult(
@@ -445,7 +515,7 @@ async def estimate_cost(input_data: CostEstimateInput):
             f"({similar_count} similar historical jobs available)"
             if similar_count > 0
             else f"Estimated range for {input_data.service_category} ({input_data.urgency} urgency). "
-                 "Estimates will improve as more job data is collected."
+            "Estimates will improve as more job data is collected."
         ),
         similar_jobs_count=similar_count,
     )
@@ -490,6 +560,7 @@ def _explain_feature(feature: str, shap_value: float) -> str:
 # PART C: Technician Assignment Endpoint
 # ---------------------------------------------------------------------------
 
+
 @app.post("/triage/assign-technician", response_model=AssignmentResult)
 async def assign_technician(classification: ClassificationResult):
     """Recommend technicians based on skillset, area, and workload."""
@@ -497,13 +568,11 @@ async def assign_technician(classification: ClassificationResult):
 
     try:
         with engine.connect() as conn:
-            technicians = conn.execute(
-                text("""
+            technicians = conn.execute(text("""
                     SELECT id, name, skills, area_zones
                     FROM technicians
                     WHERE active = true
-                """)
-            ).fetchall()
+                """)).fetchall()
 
             for tech in technicians:
                 tech_id, name, skills, zones = tech
@@ -512,53 +581,72 @@ async def assign_technician(classification: ClassificationResult):
                 skill_match = 1.0 if classification.service_category in skills else 0.3
 
                 # Area match score
-                area_match = 1.0 if classification.area_zone and classification.area_zone in zones else 0.5
+                area_match = (
+                    1.0
+                    if classification.area_zone and classification.area_zone in zones
+                    else 0.5
+                )
 
                 # Workload score (count open/assigned/in_progress jobs)
-                workload = conn.execute(
-                    text("""
+                workload = (
+                    conn.execute(
+                        text("""
                         SELECT COUNT(*) FROM jobs
                         WHERE technician_id = :tid
                           AND status IN ('open', 'assigned', 'in_progress')
                     """),
-                    {"tid": tech_id},
-                ).scalar() or 0
+                        {"tid": tech_id},
+                    ).scalar()
+                    or 0
+                )
 
-                max_daily = conn.execute(
-                    text("SELECT max_daily_jobs FROM technicians WHERE id = :tid"),
-                    {"tid": tech_id},
-                ).scalar() or 4
+                max_daily = (
+                    conn.execute(
+                        text("SELECT max_daily_jobs FROM technicians WHERE id = :tid"),
+                        {"tid": tech_id},
+                    ).scalar()
+                    or 4
+                )
 
                 availability = max(0, 1 - (workload / max_daily))
 
                 # Area familiarity (past completed jobs in this zone)
                 area_familiarity = 0.5
                 if classification.area_zone:
-                    past_jobs = conn.execute(
-                        text("""
+                    past_jobs = (
+                        conn.execute(
+                            text("""
                             SELECT COUNT(*) FROM jobs
                             WHERE technician_id = :tid
                               AND area_zone = :zone
                               AND status = 'complete'
                         """),
-                        {"tid": tech_id, "zone": classification.area_zone},
-                    ).scalar() or 0
+                            {"tid": tech_id, "zone": classification.area_zone},
+                        ).scalar()
+                        or 0
+                    )
                     area_familiarity = min(1.0, past_jobs / 20)
 
                 # Combined score: 40% skill, 40% availability, 20% area familiarity
-                combined = (0.4 * skill_match) + (0.4 * availability) + (0.2 * area_familiarity)
+                combined = (
+                    (0.4 * skill_match)
+                    + (0.4 * availability)
+                    + (0.2 * area_familiarity)
+                )
 
-                recommendations.append(TechnicianScore(
-                    technician_id=tech_id,
-                    name=name,
-                    skills=skills or [],
-                    area_zones=zones or [],
-                    skill_match_score=round(skill_match, 3),
-                    availability_score=round(availability, 3),
-                    area_familiarity_score=round(area_familiarity, 3),
-                    combined_score=round(combined, 3),
-                    current_workload=workload,
-                ))
+                recommendations.append(
+                    TechnicianScore(
+                        technician_id=tech_id,
+                        name=name,
+                        skills=skills or [],
+                        area_zones=zones or [],
+                        skill_match_score=round(skill_match, 3),
+                        availability_score=round(availability, 3),
+                        area_familiarity_score=round(area_familiarity, 3),
+                        combined_score=round(combined, 3),
+                        current_workload=workload,
+                    )
+                )
 
     except Exception as e:
         logger.error(f"Technician query failed: {e}")
@@ -576,6 +664,7 @@ async def assign_technician(classification: ClassificationResult):
 # ---------------------------------------------------------------------------
 # Model Metrics — read-only, served from the artifact train_model.py writes
 # ---------------------------------------------------------------------------
+
 
 class ModelMetrics(BaseModel):
     trained: bool
@@ -613,6 +702,7 @@ async def model_metrics():
 # Health Check
 # ---------------------------------------------------------------------------
 
+
 @app.get("/triage/health")
 async def health():
     model_loaded = xgb_model is not None
@@ -631,5 +721,6 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.getenv("TRIAGE_PORT", "8001"))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

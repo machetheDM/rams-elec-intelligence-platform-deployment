@@ -67,8 +67,11 @@ with DAG(
 
         if all_dfs:
             import pandas as pd
+
             combined = pd.concat(all_dfs, ignore_index=True)
-            context["task_instance"].xcom_push(key="excel_data", value=combined.to_dict())
+            context["task_instance"].xcom_push(
+                key="excel_data", value=combined.to_dict()
+            )
             print(f"Total extracted: {len(combined)} rows")
         else:
             context["task_instance"].xcom_push(key="excel_data", value={})
@@ -113,13 +116,18 @@ with DAG(
             for rec in pdf_data:
                 if rec.get("_extraction_status") == "failed":
                     validator._add_error(
-                        rec.get("_source_file", "unknown"), None, None, None,
-                        "extraction", rec.get("_error", "PDF extraction failed"),
+                        rec.get("_source_file", "unknown"),
+                        None,
+                        None,
+                        None,
+                        "extraction",
+                        rec.get("_error", "PDF extraction failed"),
                     )
 
         # Push results
         if valid_records:
             import pandas as pd
+
             combined = pd.concat(valid_records, ignore_index=True)
             ti.xcom_push(key="valid_data", value=combined.to_dict())
             print(f"Valid records: {len(combined)}")
@@ -258,4 +266,10 @@ with DAG(
     # DAG structure
     [extract_excel_task, extract_pdfs_task] >> validate_task >> transform_bronze_task
     transform_bronze_task >> transform_silver_task >> transform_gold_task >> load_task
-    [validate_task, transform_bronze_task, transform_silver_task, transform_gold_task, load_task] >> alert_task
+    [
+        validate_task,
+        transform_bronze_task,
+        transform_silver_task,
+        transform_gold_task,
+        load_task,
+    ] >> alert_task

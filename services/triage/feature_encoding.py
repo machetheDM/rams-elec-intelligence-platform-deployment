@@ -30,12 +30,22 @@ FEATURE_COLS = [
 ]
 
 CATEGORY_MAP = {
-    "electrical": 0, "refrigeration": 1, "emergency": 2,
-    "maintenance": 3, "installation": 4, "general": 5,
+    "electrical": 0,
+    "refrigeration": 1,
+    "emergency": 2,
+    "maintenance": 3,
+    "installation": 4,
+    "general": 5,
 }
 ZONE_MAP = {
-    "Sandton": 0, "Midrand": 1, "Centurion": 2, "Pretoria East": 3,
-    "Soweto": 4, "Polokwane": 5, "Mokopane": 6, "Bela-Bela": 7,
+    "Sandton": 0,
+    "Midrand": 1,
+    "Centurion": 2,
+    "Pretoria East": 3,
+    "Soweto": 4,
+    "Polokwane": 5,
+    "Mokopane": 6,
+    "Bela-Bela": 7,
 }
 URGENCY_HIGH_VALUES = {"emergency", "high"}
 
@@ -53,7 +63,9 @@ def encode_features(df):
     """
     df = df.copy()
     if "service_category" in df.columns:
-        df["service_category_encoded"] = df["service_category"].map(CATEGORY_MAP).fillna(5).astype(int)
+        df["service_category_encoded"] = (
+            df["service_category"].map(CATEGORY_MAP).fillna(5).astype(int)
+        )
     if "area_zone" in df.columns:
         df["area_zone_encoded"] = df["area_zone"].map(ZONE_MAP).fillna(0).astype(int)
     if "urgency" in df.columns:

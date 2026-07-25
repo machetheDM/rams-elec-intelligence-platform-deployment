@@ -34,7 +34,9 @@ def test_health_endpoint_is_reachable_without_api_key():
 
 
 def test_classify_rejects_requests_without_api_key():
-    response = client.post("/triage/classify", json={"raw_message": "no power in my house"})
+    response = client.post(
+        "/triage/classify", json={"raw_message": "no power in my house"}
+    )
     assert response.status_code == 401
 
 
@@ -45,7 +47,9 @@ def test_model_metrics_requires_api_key():
     unauthenticated = client.get("/triage/model-metrics")
     assert unauthenticated.status_code == 401
 
-    response = client.get("/triage/model-metrics", headers={"X-API-Key": "rams-elec-frontend-2026"})
+    response = client.get(
+        "/triage/model-metrics", headers={"X-API-Key": "rams-elec-frontend-2026"}
+    )
     assert response.status_code == 200
     body = response.json()
     assert "trained" in body

@@ -1,5 +1,9 @@
 # Repo-root .dockerignore — applies to any image built with context "."
-# (currently: services/triage/Dockerfile, services/dispatch/Dockerfile)
+# (currently: services/triage/Dockerfile, services/dispatch/Dockerfile,
+# services/chatbot/Dockerfile, services/loadshedding/Dockerfile, and
+# frontend/Dockerfile — the last of these needs frontend/ itself, so don't
+# exclude it wholesale below; frontend/node_modules and frontend/.next are
+# still excluded individually.)
 
 .git/
 .github/
@@ -29,9 +33,13 @@ n8n/
 airflow/
 etl/
 dashboard/
-frontend/
 scripts/
 ml/
+
+# packages/db is needed only for its prisma/ schema (frontend/Dockerfile);
+# everything else in it (generated client output, seed data) is unneeded.
+packages/db/node_modules/
+packages/db/generated/
 
 # Editor / OS
 .vscode/

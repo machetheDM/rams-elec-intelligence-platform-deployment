@@ -58,8 +58,14 @@ class PDFExtractor:
             return None
         value = value.strip()
         formats = [
-            "%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%m-%y",
-            "%Y/%m/%d", "%Y-%m-%d", "%d %b %Y", "%d %B %Y",
+            "%d/%m/%Y",
+            "%d-%m-%Y",
+            "%d/%m/%y",
+            "%d-%m-%y",
+            "%Y/%m/%d",
+            "%Y-%m-%d",
+            "%d %b %Y",
+            "%d %B %Y",
         ]
         for fmt in formats:
             try:
@@ -73,7 +79,9 @@ class PDFExtractor:
         """Parse cost string to float."""
         if not value:
             return None
-        cleaned = value.replace("R", "").replace("r", "").replace(" ", "").replace(",", "")
+        cleaned = (
+            value.replace("R", "").replace("r", "").replace(" ", "").replace(",", "")
+        )
         try:
             return float(cleaned)
         except ValueError:
@@ -152,11 +160,13 @@ class PDFExtractor:
                 result = self.extract(str(pdf_file))
                 results.append(result)
             except Exception as e:
-                results.append({
-                    "_source_file": pdf_file.name,
-                    "_source_type": "pdf",
-                    "_ingested_at": datetime.now().isoformat(),
-                    "_extraction_status": "error",
-                    "_error": str(e),
-                })
+                results.append(
+                    {
+                        "_source_file": pdf_file.name,
+                        "_source_type": "pdf",
+                        "_ingested_at": datetime.now().isoformat(),
+                        "_extraction_status": "error",
+                        "_error": str(e),
+                    }
+                )
         return results

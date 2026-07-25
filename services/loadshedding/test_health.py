@@ -16,7 +16,9 @@ from fastapi.testclient import TestClient
 _SERVICE_DIR = Path(__file__).resolve().parent
 if str(_SERVICE_DIR) not in sys.path:
     sys.path.insert(0, str(_SERVICE_DIR))
-_spec = importlib.util.spec_from_file_location("loadshedding_main", _SERVICE_DIR / "main.py")
+_spec = importlib.util.spec_from_file_location(
+    "loadshedding_main", _SERVICE_DIR / "main.py"
+)
 _loadshedding_main = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_loadshedding_main)
 
@@ -30,7 +32,9 @@ def test_health_endpoint_is_reachable():
 
 
 def test_subscribe_rejects_requests_without_api_key():
-    response = client.post("/loadshedding/subscribe", json={"area_zone": "Sandton", "customer_id": "1"})
+    response = client.post(
+        "/loadshedding/subscribe", json={"area_zone": "Sandton", "customer_id": "1"}
+    )
     assert response.status_code == 401
 
 

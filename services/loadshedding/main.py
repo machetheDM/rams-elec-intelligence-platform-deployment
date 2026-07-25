@@ -74,7 +74,9 @@ apply_security_middleware(
 # ---------------------------------------------------------------------------
 ESP_API_KEY = os.getenv("ESKOM_SE_PUSH_API_KEY", "")
 ESP_BASE_URL = "https://developer.sepush.co.za/business/2.0"
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec"
+)
 engine = create_engine(DATABASE_URL)
 
 # Cache: 15 minutes
@@ -96,6 +98,7 @@ AREA_ID_MAP = {
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
 # ---------------------------------------------------------------------------
+
 
 class LoadsheddingStatus(BaseModel):
     area_zone: str
@@ -123,7 +126,9 @@ class SubscribeRequest(BaseModel):
 
     area_zone: str = Field(..., max_length=100)
     customer_id: Optional[str] = Field(None, max_length=100)
-    phone: Optional[str] = Field(None, max_length=15, description="SA phone number (+27...)")
+    phone: Optional[str] = Field(
+        None, max_length=15, description="SA phone number (+27...)"
+    )
 
     @field_validator("area_zone")
     @classmethod
@@ -139,6 +144,7 @@ class SubscribeRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # EskomSePush API Client
 # ---------------------------------------------------------------------------
+
 
 class EskomSePushClient:
     """Wrapper around EskomSePush API with caching."""
@@ -202,7 +208,11 @@ def _get_client() -> EskomSePushClient:
 def _get_cached_status() -> dict:
     global _cache_timestamp, _cached_status
     now = datetime.now()
-    if _cache_timestamp and (now - _cache_timestamp).seconds < CACHE_TTL and _cached_status:
+    if (
+        _cache_timestamp
+        and (now - _cache_timestamp).seconds < CACHE_TTL
+        and _cached_status
+    ):
         return _cached_status
     client = _get_client()
     _cached_status = client.get_status()
@@ -212,7 +222,6 @@ def _get_cached_status() -> dict:
 
 
 def _get_cached_schedule(area_id: str) -> dict:
-    global _cached_schedules
     now = datetime.now()
     if area_id in _cached_schedules:
         cached = _cached_schedules[area_id]
@@ -246,6 +255,7 @@ def _find_next_outage(events: list[dict]) -> tuple[Optional[str], Optional[str]]
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.get("/loadshedding/status/{area_zone}", response_model=LoadsheddingStatus)
 async def get_status(area_zone: str):
     """Get current load-shedding status for an area zone."""
@@ -258,7 +268,9 @@ async def get_status(area_zone: str):
         if areas:
             area_id = areas[0]["id"]
         else:
-            raise HTTPException(status_code=404, detail=f"Area zone '{area_zone}' not found")
+            raise HTTPException(
+                status_code=404, detail=f"Area zone '{area_zone}' not found"
+            )
 
     # Get national status
     status_data = _get_cached_status()
@@ -305,7 +317,9 @@ async def get_schedule(area_zone: str):
     """Get 7-day load-shedding schedule for an area zone."""
     area_id = AREA_ID_MAP.get(area_zone)
     if not area_id:
-        raise HTTPException(status_code=404, detail=f"Area zone '{area_zone}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Area zone '{area_zone}' not found"
+        )
 
     schedule_data = _get_cached_schedule(area_id)
     events = schedule_data.get("events", [])
@@ -313,11 +327,13 @@ async def get_schedule(area_zone: str):
     schedule_events = []
     for event in events:
         try:
-            schedule_events.append(ScheduleEvent(
-                start=event.get("start", ""),
-                end=event.get("end", ""),
-                stage=event.get("stage", 0) or 0,
-            ))
+            schedule_events.append(
+                ScheduleEvent(
+                    start=event.get("start", ""),
+                    end=event.get("end", ""),
+                    stage=event.get("stage", 0) or 0,
+                )
+            )
         except Exception:
             continue
 
@@ -343,7 +359,9 @@ async def subscribe(request: SubscribeRequest):
                 )
             elif request.phone:
                 conn.execute(
-                    text("UPDATE customers SET alert_subscribed = true WHERE phone = :phone"),
+                    text(
+                        "UPDATE customers SET alert_subscribed = true WHERE phone = :phone"
+                    ),
                     {"phone": request.phone},
                 )
         return {"status": "subscribed", "area_zone": request.area_zone}
@@ -364,5 +382,6 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.getenv("LOADSHEDDING_PORT", "8002"))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

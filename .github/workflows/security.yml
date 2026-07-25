@@ -156,7 +156,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: cd frontend && npm ci
+        run: cd frontend && npm ci && npm run db:generate
 
       - name: Run npm audit
         run: |
@@ -255,7 +255,7 @@ jobs:
 
       - name: Build Docker images (no push)
         run: |
-          docker build -t rams-elec-web:ci ./frontend
+          docker build -t rams-elec-web:ci -f frontend/Dockerfile .
           docker build -t rams-elec-triage:ci -f services/triage/Dockerfile .
           docker build -t rams-elec-dispatch:ci -f services/dispatch/Dockerfile .
           docker build -t rams-elec-loadshedding:ci -f services/loadshedding/Dockerfile .

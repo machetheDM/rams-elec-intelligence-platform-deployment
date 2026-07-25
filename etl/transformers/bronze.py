@@ -44,7 +44,8 @@ class BronzeTransformer:
         bronze["_extraction_status"] = "complete"
         bronze["_raw_data"] = df.apply(lambda row: row.to_dict(), axis=1)
         bronze["_bronze_id"] = bronze.apply(
-            lambda r: f"{r['_source_file']}_{r['_row_index']}_{r['_ingested_at']}", axis=1
+            lambda r: f"{r['_source_file']}_{r['_row_index']}_{r['_ingested_at']}",
+            axis=1,
         )
         return bronze
 
@@ -55,9 +56,12 @@ class BronzeTransformer:
         bronze["_source_type"] = "pdf"
         bronze["_ingested_at"] = datetime.now().isoformat()
         bronze["_row_index"] = range(len(records))
-        bronze["_extraction_status"] = [r.get("_extraction_status", "unknown") for r in records]
+        bronze["_extraction_status"] = [
+            r.get("_extraction_status", "unknown") for r in records
+        ]
         bronze["_raw_data"] = [r for r in records]
         bronze["_bronze_id"] = bronze.apply(
-            lambda r: f"{r['_source_file']}_{r['_row_index']}_{r['_ingested_at']}", axis=1
+            lambda r: f"{r['_source_file']}_{r['_row_index']}_{r['_ingested_at']}",
+            axis=1,
         )
         return bronze

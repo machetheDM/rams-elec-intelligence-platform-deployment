@@ -134,6 +134,7 @@ function StatCard({ title, value, color }: { title: string; value: string; color
   };
 
   return (
+    // eslint-disable-next-line security/detect-object-injection -- color is a component prop from a fixed set of literals, not user input
     <div className={`p-4 rounded-xl border ${colorClasses[color] || colorClasses.amber}`}>
       <span className="text-sm text-industrial-400">{title}</span>
       <p className="text-2xl font-bold text-white mt-1">{value}</p>

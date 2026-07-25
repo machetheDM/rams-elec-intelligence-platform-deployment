@@ -134,7 +134,14 @@ class ExcelExtractor:
         """Normalise SA phone numbers to +27 format."""
         if value is None or (isinstance(value, str) and value.strip() == ""):
             return None
-        raw = str(value).strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        raw = (
+            str(value)
+            .strip()
+            .replace(" ", "")
+            .replace("-", "")
+            .replace("(", "")
+            .replace(")", "")
+        )
         # Handle numbers starting with 0 (e.g. 0831234567 → +27831234567)
         if raw.startswith("0"):
             raw = "+27" + raw[1:]

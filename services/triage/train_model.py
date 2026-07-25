@@ -40,7 +40,9 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("train_model")
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec"
+)
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
 
 MODEL_DIR = Path(__file__).parent / "model"
@@ -84,8 +86,12 @@ def _load_synthetic_training_data() -> pd.DataFrame:
     silver = SilverTransformer().transform(bronze)
     gold = GoldTransformer().transform(silver)
 
-    completed = gold[gold["actual_cost"].notna()] if "actual_cost" in gold.columns else gold
-    logger.info(f"Synthetic ETL pipeline produced {len(completed)} completed job records")
+    completed = (
+        gold[gold["actual_cost"].notna()] if "actual_cost" in gold.columns else gold
+    )
+    logger.info(
+        f"Synthetic ETL pipeline produced {len(completed)} completed job records"
+    )
     return completed
 
 
@@ -103,7 +109,9 @@ def load_training_data() -> tuple[pd.DataFrame, str]:
         # Try gold_jobs table first
         try:
             with engine.connect() as conn:
-                result = conn.execute(text("SELECT * FROM gold_jobs WHERE actual_cost IS NOT NULL"))
+                result = conn.execute(
+                    text("SELECT * FROM gold_jobs WHERE actual_cost IS NOT NULL")
+                )
                 rows = result.fetchall()
             if rows:
                 columns = result.keys()
@@ -141,13 +149,17 @@ def load_training_data() -> tuple[pd.DataFrame, str]:
             df["is_weekend"] = df["day_of_week"].isin([5, 6]).astype(int)
 
             df["equipment_age_years"] = (
-                (df["scheduled_date"] - df["install_date"]).dt.days / 365.25
-            ).fillna(0).clip(0, 50)
+                ((df["scheduled_date"] - df["install_date"]).dt.days / 365.25)
+                .fillna(0)
+                .clip(0, 50)
+            )
 
             logger.info(f"Built {len(df)} training records from jobs table")
             return encode_features(df), "postgres:jobs"
     except Exception as e:
-        logger.warning(f"Database unavailable ({e}) — falling back to synthetic ETL pipeline")
+        logger.warning(
+            f"Database unavailable ({e}) — falling back to synthetic ETL pipeline"
+        )
 
     logger.info("No database training data available — running synthetic ETL pipeline")
     df = _load_synthetic_training_data()
@@ -166,7 +178,9 @@ def train():
     y = df["actual_cost"].clip(lower=0)
 
     logger.info(f"Training data: {X.shape[0]} samples, {X.shape[1]} features")
-    logger.info(f"Target range: R{y.min():,.2f} – R{y.max():,.2f}, mean: R{y.mean():,.2f}")
+    logger.info(
+        f"Target range: R{y.min():,.2f} – R{y.max():,.2f}, mean: R{y.mean():,.2f}"
+    )
 
     # Train/test split
     X_train, X_test, y_train, y_test = train_test_split(
@@ -177,7 +191,9 @@ def train():
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment("rams_elec_quote_estimator")
 
-    with mlflow.start_run(run_name=f"xgb_v1_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}"):
+    with mlflow.start_run(
+        run_name=f"xgb_v1_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}"
+    ):
         # Model parameters
         params = {
             "n_estimators": 200,
@@ -204,7 +220,9 @@ def train():
         r2 = r2_score(y_test, y_pred)
 
         # Cross-validation
-        cv_scores = cross_val_score(model, X, y, cv=5, scoring="neg_mean_absolute_error")
+        cv_scores = cross_val_score(
+            model, X, y, cv=5, scoring="neg_mean_absolute_error"
+        )
         cv_mae = -cv_scores.mean()
 
         logger.info(f"MAE:  R{mae:,.2f}")
@@ -214,12 +232,14 @@ def train():
 
         # Log to MLflow
         mlflow.log_params(params)
-        mlflow.log_metrics({
-            "mae": mae,
-            "rmse": rmse,
-            "r2": r2,
-            "cv_mae": cv_mae,
-        })
+        mlflow.log_metrics(
+            {
+                "mae": mae,
+                "rmse": rmse,
+                "r2": r2,
+                "cv_mae": cv_mae,
+            }
+        )
         mlflow.xgboost.log_model(model, "model")
 
         # Feature importance
@@ -268,6 +288,7 @@ def train():
         # Generate SHAP explainer
         try:
             import shap
+
             explainer = shap.TreeExplainer(model)
             shap_values = explainer.shap_values(X_test[:100])
 
@@ -278,8 +299,11 @@ def train():
 
             # Log SHAP summary to MLflow
             import matplotlib.pyplot as plt
+
             fig, ax = plt.subplots(figsize=(10, 6))
-            shap.summary_plot(shap_values, X_test[:100], feature_names=FEATURE_COLS, show=False)
+            shap.summary_plot(
+                shap_values, X_test[:100], feature_names=FEATURE_COLS, show=False
+            )
             mlflow.log_figure(fig, "shap_summary.png")
             plt.close()
             logger.info("SHAP summary logged to MLflow")
