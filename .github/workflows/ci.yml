@@ -111,6 +111,22 @@ jobs:
         working-directory: terraform/aws
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # lambda.tf calls filebase64sha256() on the deployment package, and
+      # `terraform validate` evaluates that — every input is known, so a missing
+      # file is a hard error, not a deferred one. dist/ is git-ignored, so the
+      # package has to be built here.
+      #
+      # Building it rather than stubbing an empty file is the point: it also
+      # verifies the cross-platform wheel resolution in build_lambda.py, which is
+      # the part most likely to break silently.
+      - name: Build Lambda package
+        working-directory: .
+        run: python scripts/build_lambda.py
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.8"
