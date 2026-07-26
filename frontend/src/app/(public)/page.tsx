@@ -4,6 +4,8 @@ import ServicesBento from "@/components/home/ServicesBento";
 import QuoteEstimatorStats from "@/components/home/QuoteEstimatorStats";
 import RiskSection from "@/components/home/RiskSection";
 import SecurityTrustSection from "@/components/home/SecurityTrustSection";
+import TestimonialsSection from "@/components/home/TestimonialsSection";
+import AlertSignupSection from "@/components/home/AlertSignupSection";
 import CtaSection from "@/components/home/CtaSection";
 
 /**
@@ -36,6 +38,8 @@ export default function HomePage() {
       <QuoteEstimatorStats />
       <RiskSection />
       <SecurityTrustSection />
+      <TestimonialsSection />
+      <AlertSignupSection />
       <CtaSection />
     </div>
   );

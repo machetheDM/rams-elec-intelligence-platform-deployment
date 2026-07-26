@@ -1,0 +1,235 @@
+{
+  "name": "Rams @Elec — Post-Service Follow-up Conversation (Module 10)",
+  "description": "DESIGNED, NOT PROVISIONED. Multi-step WhatsApp check-in triggered by the followup_trigger Airflow DAG. Business-initiated WhatsApp outside the 24h service window requires a Meta-approved message template — see docs/followup-agent.md. Unlike the older workflows in this directory, every internal HTTP call here sends X-API-Key, because the FastAPI services are API-key gated (security/auth/api_key_middleware.py).",
+  "nodes": [
+    {
+      "name": "Webhook — Follow-up Due",
+      "type": "n8n-nodes-base.webhook",
+      "position": [250, 400],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "followup-checkin",
+        "responseMode": "lastNode"
+      }
+    },
+    {
+      "name": "Send Check-in (WhatsApp)",
+      "type": "n8n-nodes-base.twilio",
+      "position": [500, 400],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "{{ $env.TWILIO_WHATSAPP_FROM }}",
+        "to": "whatsapp:{{ $json.customer_whatsapp }}",
+        "message": "Hi {{ $json.customer_name }}, it's been {{ $json.days_since_completion }} days since we serviced your {{ $json.service_name }}. Quick check — is everything still working well? Reply YES or NO"
+      }
+    },
+    {
+      "name": "Log Check-in Sent",
+      "type": "n8n-nodes-base.postgres",
+      "position": [750, 400],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO notification_log (customer_id, channel, message_type, content, status) VALUES ('{{ $('Webhook — Follow-up Due').item.json.customer_id }}', 'whatsapp', 'followup_checkin', 'Follow-up check-in for job {{ $('Webhook — Follow-up Due').item.json.job_id }}', 'sent')"
+      }
+    },
+    {
+      "name": "Webhook — Customer Reply",
+      "type": "n8n-nodes-base.webhook",
+      "position": [250, 700],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "followup-reply",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "name": "IF Still Working",
+      "type": "n8n-nodes-base.if",
+      "position": [500, 700],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.reply.toLowerCase().trim() }}",
+              "operation": "contains",
+              "value2": "yes"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Ask For Rating",
+      "type": "n8n-nodes-base.twilio",
+      "position": [750, 600],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "{{ $env.TWILIO_WHATSAPP_FROM }}",
+        "to": "whatsapp:{{ $json.body.from }}",
+        "message": "Great! Could you rate your experience with us from 1-5? (1=poor, 5=excellent)"
+      }
+    },
+    {
+      "name": "Record Still Working",
+      "type": "n8n-nodes-base.postgres",
+      "position": [1000, 600],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE follow_ups SET still_working = true, response_received = true, responded_at = NOW() WHERE id = '{{ $json.body.follow_up_id }}'"
+      }
+    },
+    {
+      "name": "Ask For Comment",
+      "type": "n8n-nodes-base.twilio",
+      "position": [1250, 600],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "{{ $env.TWILIO_WHATSAPP_FROM }}",
+        "to": "whatsapp:{{ $json.body.from }}",
+        "message": "Thank you! Any comments you'd like to share? (optional — reply SKIP to finish)"
+      }
+    },
+    {
+      "name": "Analyze Sentiment",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1500, 600],
+      "parameters": {
+        "method": "POST",
+        "url": "http://sentiment:8006/sentiment/analyze",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-Key", "value": "={{ $env.INTERNAL_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "comment_text", "value": "={{ $json.body.reply }}" },
+            { "name": "follow_up_id", "value": "={{ $json.body.follow_up_id }}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Store Rating & Sentiment",
+      "type": "n8n-nodes-base.postgres",
+      "position": [1750, 600],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE follow_ups SET satisfaction_rating = {{ $('Webhook — Customer Reply').item.json.body.rating }}, comment_text = '{{ $('Webhook — Customer Reply').item.json.body.reply }}', sentiment_score = {{ $json.sentiment_score }}, sentiment_themes = '{{ JSON.stringify($json.sentiment_themes).replace('[','{').replace(']','}') }}' WHERE id = '{{ $('Webhook — Customer Reply').item.json.body.follow_up_id }}'"
+      }
+    },
+    {
+      "name": "Ask What Happened",
+      "type": "n8n-nodes-base.twilio",
+      "position": [750, 850],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "{{ $env.TWILIO_WHATSAPP_FROM }}",
+        "to": "whatsapp:{{ $json.body.from }}",
+        "message": "Sorry to hear that. Could you briefly describe what's happening? Our team will follow up."
+      }
+    },
+    {
+      "name": "Create Follow-up Inquiry",
+      "type": "n8n-nodes-base.postgres",
+      "position": [1000, 850],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO inquiries (id, customer_id, source, raw_message, urgency_score, status, created_at) VALUES (gen_random_uuid()::text, '{{ $json.body.customer_id }}', 'follow_up_whatsapp', '{{ $json.body.reply }}', 0.8, 'new', NOW()) RETURNING id"
+      }
+    },
+    {
+      "name": "Link Inquiry To Follow-up",
+      "type": "n8n-nodes-base.postgres",
+      "position": [1250, 850],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE follow_ups SET still_working = false, response_received = true, responded_at = NOW(), follow_up_issue_created = true, follow_up_inquiry_id = '{{ $json.id }}' WHERE id = '{{ $('Webhook — Customer Reply').item.json.body.follow_up_id }}'"
+      }
+    },
+    {
+      "name": "Trigger Triage Crew",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1500, 850],
+      "parameters": {
+        "method": "POST",
+        "url": "http://crew:8005/crew/process",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-Key", "value": "={{ $env.INTERNAL_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "raw_message",
+              "value": "={{ $('Webhook — Customer Reply').item.json.body.reply }}"
+            },
+            { "name": "source", "value": "follow_up_whatsapp" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Confirm Issue Logged",
+      "type": "n8n-nodes-base.twilio",
+      "position": [1750, 850],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "{{ $env.TWILIO_WHATSAPP_FROM }}",
+        "to": "whatsapp:{{ $('Webhook — Customer Reply').item.json.body.from }}",
+        "message": "Thank you — we've logged this and will be in touch shortly."
+      }
+    }
+  ],
+  "connections": {
+    "Webhook — Follow-up Due": {
+      "main": [[{ "node": "Send Check-in (WhatsApp)", "type": "main", "index": 0 }]]
+    },
+    "Send Check-in (WhatsApp)": {
+      "main": [[{ "node": "Log Check-in Sent", "type": "main", "index": 0 }]]
+    },
+    "Webhook — Customer Reply": {
+      "main": [[{ "node": "IF Still Working", "type": "main", "index": 0 }]]
+    },
+    "IF Still Working": {
+      "main": [
+        [{ "node": "Ask For Rating", "type": "main", "index": 0 }],
+        [{ "node": "Ask What Happened", "type": "main", "index": 0 }]
+      ]
+    },
+    "Ask For Rating": {
+      "main": [[{ "node": "Record Still Working", "type": "main", "index": 0 }]]
+    },
+    "Record Still Working": {
+      "main": [[{ "node": "Ask For Comment", "type": "main", "index": 0 }]]
+    },
+    "Ask For Comment": {
+      "main": [[{ "node": "Analyze Sentiment", "type": "main", "index": 0 }]]
+    },
+    "Analyze Sentiment": {
+      "main": [[{ "node": "Store Rating & Sentiment", "type": "main", "index": 0 }]]
+    },
+    "Ask What Happened": {
+      "main": [[{ "node": "Create Follow-up Inquiry", "type": "main", "index": 0 }]]
+    },
+    "Create Follow-up Inquiry": {
+      "main": [[{ "node": "Link Inquiry To Follow-up", "type": "main", "index": 0 }]]
+    },
+    "Link Inquiry To Follow-up": {
+      "main": [[{ "node": "Trigger Triage Crew", "type": "main", "index": 0 }]]
+    },
+    "Trigger Triage Crew": {
+      "main": [[{ "node": "Confirm Issue Logged", "type": "main", "index": 0 }]]
+    }
+  }
+}

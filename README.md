@@ -76,6 +76,7 @@ graph TB
 | 7 | Dispatch & Job Assignment | Skillset-based technician matching | ⏳ Pending |
 | 8 | Public Frontend Upgrade | Next.js 15 responsive dark-mode site | ⏳ Pending |
 | 9 | Integration Testing & Deployment | Docker Compose + CI + Vercel/Railway | ⏳ Pending |
+| 10 | Post-Service Follow-up Agent | Airflow trigger DAG + POPIA consent gate + sentiment service. WhatsApp flow designed, not provisioned; failure-recurrence model awaiting data | 🔄 In Progress |
 
 ## Module Overview
 
@@ -90,6 +91,7 @@ graph TB
 | 7 | **Smart Dispatch** | Skillset + availability + area familiarity scoring. Kanban job board. Technician mobile view. | FastAPI, Next.js |
 | 8 | **Frontend Upgrade** | Conversational multi-step inquiry form. Real-time load-shedding widget. Service catalog with pricing. Responsive, dark mode. | Next.js 15, Tailwind |
 | 9 | **Integration & Deploy** | Docker Compose local dev. GitHub Actions CI. Integration test (full customer journey). Vercel + Railway deployment config. | Docker, GitHub Actions |
+| 10 | **Post-Service Follow-up** | Daily Airflow DAG finds jobs past their check-in threshold (3d urgent / 7d standard) and opens a WhatsApp satisfaction conversation. POPIA consent enforced as a SQL precondition. Sentiment service scores free-text comments against a fixed taxonomy. Builds the labelled dataset for a future equipment failure-recurrence model. | Airflow, n8n, Groq, FastAPI |
 
 ---
 

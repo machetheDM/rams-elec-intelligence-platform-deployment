@@ -51,8 +51,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # NOTE: healthchecks use the interpreter already in the image, NOT curl.
+    # python:3.12-slim and node:20-alpine both ship WITHOUT curl, so a
+    # `curl -f` probe exits -1 with "executable file not found in $PATH".
+    # That marks every service unhealthy forever, which in turn means
+    # `depends_on: condition: service_healthy` can never be satisfied and
+    # `docker compose up` hangs instead of starting anything. Copy this
+    # pattern, not a curl one.
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/triage/health"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/triage/health', timeout=5).status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -76,7 +83,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/loadshedding/health"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/loadshedding/health', timeout=5).status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -103,7 +110,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/chatbot/health"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8003/chatbot/health', timeout=5).status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -127,7 +134,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8004/dispatch/health"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8004/dispatch/health', timeout=5).status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -158,7 +165,30 @@ services:
       dispatch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8005/crew/health"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8005/crew/health', timeout=5).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # =============================================================================
+  # FastAPI — Sentiment Analysis (Module 10)
+  # =============================================================================
+  # Stateless: n8n calls it with a customer's follow-up comment and writes the
+  # returned score/themes back onto the follow_ups row itself, so this service
+  # needs no DATABASE_URL.
+  sentiment:
+    build:
+      context: .
+      dockerfile: services/sentiment/Dockerfile
+    container_name: rams-elec-sentiment
+    env_file: .env
+    ports:
+      - "8006:8006"
+    environment:
+      - SENTIMENT_PORT=8006
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8006/sentiment/health', timeout=5).status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -187,6 +217,7 @@ services:
       # without exposing the internal API key to the browser.
       - TRIAGE_SERVICE_URL=http://triage:8001
       - CHATBOT_SERVICE_URL=http://chatbot:8003
+      - LOADSHEDDING_SERVICE_URL=http://loadshedding:8002
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-rams-elec-frontend-2026}
     depends_on:
       triage:
@@ -198,7 +229,10 @@ services:
       dispatch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      # node, not python — this image is node:20-alpine. Busybox wget would
+      # also work here, but node is the reason this image exists so it can
+      # never be missing.
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 3

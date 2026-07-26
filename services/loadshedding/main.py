@@ -346,25 +346,46 @@ async def get_schedule(area_zone: str):
 
 @app.post("/loadshedding/subscribe")
 async def subscribe(request: SubscribeRequest):
-    """Register a customer for load-shedding alerts."""
+    """Register an existing customer for load-shedding alerts.
+
+    Returns `matched` so the caller can tell a real subscription from a
+    no-op. Previously this reported {"status": "subscribed"} unconditionally:
+    an UPDATE against a phone number with no matching customer row affects
+    zero rows and raises nothing, so a public sign-up form would show every
+    new visitor a success message while recording nothing at all.
+
+    This endpoint deliberately does NOT create customer records. Accepting
+    names and phone numbers from an unauthenticated public form is personal-
+    information collection under POPIA and needs its own consent capture,
+    verification and retention decisions — not a silent INSERT here.
+    """
     if not request.customer_id and not request.phone:
         raise HTTPException(status_code=400, detail="customer_id or phone required")
 
     try:
         with engine.begin() as conn:
             if request.customer_id:
-                conn.execute(
+                result = conn.execute(
                     text("UPDATE customers SET alert_subscribed = true WHERE id = :id"),
                     {"id": request.customer_id},
                 )
-            elif request.phone:
-                conn.execute(
+            else:
+                result = conn.execute(
                     text(
                         "UPDATE customers SET alert_subscribed = true WHERE phone = :phone"
                     ),
                     {"phone": request.phone},
                 )
-        return {"status": "subscribed", "area_zone": request.area_zone}
+            matched = result.rowcount > 0
+
+        if not matched:
+            logger.info("Subscribe: no customer matched — nothing recorded")
+
+        return {
+            "status": "subscribed" if matched else "no_matching_customer",
+            "matched": matched,
+            "area_zone": request.area_zone,
+        }
     except Exception as e:
         logger.error(f"Subscribe failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

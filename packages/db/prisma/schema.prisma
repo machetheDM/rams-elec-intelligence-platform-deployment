@@ -32,6 +32,15 @@ model Customer {
   address   String?
   areaZone  String   @map("area_zone") // e.g. "Sandton", "Polokwane", "Mokopane"
   alertSubscribed Boolean @default(false) @map("alert_subscribed")
+
+  // POPIA: consent must be specific and informed *per purpose*. This is
+  // deliberately separate from alertSubscribed (load-shedding alerts) —
+  // reusing that flag to justify post-service satisfaction messaging would
+  // be exactly the consent-creep POPIA prohibits. The follow-up DAG treats
+  // this as a hard SQL precondition, not an application-layer check.
+  followUpConsent   Boolean   @default(false) @map("follow_up_consent")
+  followUpConsentAt DateTime? @map("follow_up_consent_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -42,6 +51,7 @@ model Customer {
   maintenanceSchedules  MaintenanceSchedule[]
   notificationLogs      NotificationLog[]
   chatbotConversations  ChatbotConversation[]
+  followUps             FollowUp[]
 
   @@map("customers")
 }
@@ -74,9 +84,17 @@ model Equipment {
   warrantyExpiry  DateTime? @map("warranty_expiry")
   notes          String?
 
+  // Written by the failure-recurrence model (ml/training/, Module 10 Part E).
+  // Null until that model has enough labelled follow-ups to train — see
+  // docs/followup-agent.md on the cold-start threshold. Equipment scoring
+  // above the review threshold is surfaced via MaintenanceSchedule.
+  riskScore      Float?    @map("risk_score") // 0.0–1.0 predicted failure recurrence
+  riskScoredAt   DateTime? @map("risk_scored_at")
+
   customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   jobs           Job[]
   maintenanceSchedules MaintenanceSchedule[]
+  followUps      FollowUp[]
 
   @@map("equipment")
 }
@@ -121,6 +139,7 @@ model Job {
 
   statusHistory   JobStatusHistory[]
   inquiry         Inquiry?
+  followUps       FollowUp[]
 
   @@index([status])
   @@index([areaZone])
@@ -212,7 +231,7 @@ model NotificationLog {
   id          String   @id @default(cuid())
   customerId  String?  @map("customer_id")
   channel     String   // whatsapp | sms | email
-  messageType String   @map("message_type") // inquiry_confirmation | technician_alert | loadshedding_alert | job_update | maintenance_reminder
+  messageType String   @map("message_type") // inquiry_confirmation | technician_alert | loadshedding_alert | job_update | maintenance_reminder | followup_checkin
   content     String
   status      String   @default("sent") // sent | failed
   sentAt      DateTime @default(now()) @map("sent_at")
@@ -237,6 +256,54 @@ model JobStatusHistory {
 
   @@index([jobId])
   @@map("job_status_history")
+}
+
+// =============================================================================
+// POST-SERVICE FOLLOW-UP (Module 10)
+// =============================================================================
+// Captures equipment-failure signal through customer-reported outcomes N days
+// after a job completes, rather than through IoT sensors — see
+// docs/phase2/roadmap.md for why the sensor route stays deferred.
+//
+// This table is also the training set for the failure-recurrence model
+// (ml/training/, Part E): `stillWorking = false` is the target label. Until
+// enough labelled rows accumulate, that model does not train — see
+// docs/followup-agent.md.
+//
+// NOTE on linking a follow-up issue back to the original job: do NOT set
+// Inquiry.assignedJobId — it is @unique (a 1:1 relation) and the original
+// job already consumed it. The join path is Job <- FollowUp -> Inquiry via
+// jobId + followUpInquiryId below.
+model FollowUp {
+  id                   String    @id @default(cuid())
+  jobId                String    @map("job_id")
+  customerId           String    @map("customer_id")
+  equipmentId          String?   @map("equipment_id")
+  daysSinceCompletion  Int       @map("days_since_completion")
+  triggeredAt          DateTime  @default(now()) @map("triggered_at")
+
+  responseReceived     Boolean   @default(false) @map("response_received")
+  respondedAt          DateTime? @map("responded_at")
+  stillWorking         Boolean?  @map("still_working")
+  satisfactionRating   Int?      @map("satisfaction_rating") // 1–5
+  commentText          String?   @map("comment_text")
+
+  sentimentScore       Float?    @map("sentiment_score") // -1.0–1.0 from services/sentiment
+  sentimentThemes      String[]  @map("sentiment_themes") // professionalism | pricing | timing | equipment_quality | communication | cleanliness | other
+
+  followUpIssueCreated Boolean   @default(false) @map("follow_up_issue_created")
+  followUpInquiryId    String?   @map("follow_up_inquiry_id")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  job                  Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  customer             Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  equipment            Equipment? @relation(fields: [equipmentId], references: [id])
+
+  @@index([jobId])
+  @@index([responseReceived])
+  @@index([triggeredAt])
+  @@index([stillWorking])
+  @@map("follow_ups")
 }
 
 // =============================================================================

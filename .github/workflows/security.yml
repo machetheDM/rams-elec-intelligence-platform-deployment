@@ -261,6 +261,7 @@ jobs:
           docker build -t rams-elec-loadshedding:ci -f services/loadshedding/Dockerfile .
           docker build -t rams-elec-chatbot:ci -f services/chatbot/Dockerfile .
           docker build -t rams-elec-crew:ci -f services/crew/Dockerfile .
+          docker build -t rams-elec-sentiment:ci -f services/sentiment/Dockerfile .
           docker build -t rams-elec-dashboard:ci ./dashboard
           docker build -f docker/Dockerfile.airflow -t rams-elec-airflow:ci ./etl
         continue-on-error: true
@@ -321,6 +322,16 @@ jobs:
           image-ref: rams-elec-crew:ci
           format: json
           output: reports/trivy_crew_report.json
+          severity: CRITICAL,HIGH
+          exit-code: 0
+        continue-on-error: true
+
+      - name: Run Trivy on sentiment image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: rams-elec-sentiment:ci
+          format: json
+          output: reports/trivy_sentiment_report.json
           severity: CRITICAL,HIGH
           exit-code: 0
         continue-on-error: true
