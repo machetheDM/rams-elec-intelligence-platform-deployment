@@ -173,12 +173,12 @@ verify crew in Docker, not locally. Port 5432 is often taken by another project'
 
 ## State as of 2026-07-26
 
-**On `main`:** structural fixes, security hardening across all services, XGBoost quote estimator
-(**MAE R11,280.65 · R² 0.5121 · CV MAE R10,393.38**, 108/27 split, synthetic data), the landing
-page, CrewAI crew (PR #12, merged). CI green.
+**On `main` (`8087630`):** structural fixes, security hardening across all services, XGBoost quote
+estimator (**MAE R11,280.65 · R² 0.5121 · CV MAE R10,393.38**, 108/27 split, synthetic data), the
+landing page, CrewAI crew (PR #12), and Module 10 + testimonials + alert signup + the Docker
+healthcheck fix (PR #13). CI green on both pipelines.
 
 **Open:**
-- **PR #13** (`feat/followup-agent`) — Module 10 + testimonials + alert signup. Needs merging.
 - **Module 10 migration written but NOT applied**:
   `packages/db/prisma/migrations/20260726000000_followup_agent/` → `npx prisma migrate deploy`.
 - **Module 10 Parts E (ML) and F (dashboard page)** deferred until follow-up data exists.
