@@ -106,6 +106,22 @@ Concretely, things that have been deliberately *refused*:
   `ExceptionMiddleware` sits *inside* user middleware, so it surfaces as 500 not 401.
   Return `JSONResponse` directly.
 
+**API keys and `APP_ENV`** (`security/auth/api_key_middleware.py`)
+- Three keys are committed on purpose so `docker compose up` works with no setup:
+  `rams-elec-{frontend,airflow,n8n}-2026`. Their SHA-256 hashes are therefore public.
+- `APP_ENV` defaults to `development`, which accepts them (with a warning). **Any other
+  value** — including a typo or an empty string — requires `API_KEY_HASHES` and raises
+  `RuntimeError` *at import* without it. Unknown environment fails closed, never open.
+- Supplying a committed key's hash via `API_KEY_HASHES` also raises when `APP_ENV` is not
+  development. Moving a published key into an env var does not make it a secret.
+- `VALID_API_KEY_HASHES` resolves at import, so tests must `importlib.reload` and restore.
+  See `tests/test_api_key_env_gate.py` for the fixture pattern.
+
+**Terraform** — two root modules, no shared state, and `terraform` does not recurse.
+`terraform/*.tf` is **Azure, designed and never provisioned** (ECCU524). `terraform/aws/*.tf`
+is **Module 11, intended to actually run**. Do not blur these, and do not add AWS resources
+to the Azure root. `cd terraform/aws` first.
+
 **Frontend** — strict separation so UI can be redesigned (v0.dev) without touching logic.
 - `src/lib/api/*.ts` = data fetching, no React. `src/hooks/*.ts` = headless state, zero markup.
   `src/components/**` = presentation only.
@@ -121,14 +137,19 @@ with context `./etl` and bakes `COPY dags/`; anything in `airflow/dags/` is neve
 Use `schedule_interval` (not `schedule`), `PythonOperator` (no TaskFlow anywhere), SQLAlchemy
 `create_engine` + `text()`.
 
-**Testing** — `pytest.ini` sets `--import-mode=importlib`, `testpaths = services`. Each service has
-`test_health.py` loading `main.py` by explicit path (all share the basename). Standard tests:
-health reachable unauthenticated (200), main endpoint 401 without API key.
+**Testing** — `pytest.ini` sets `--import-mode=importlib`, `testpaths = services tests`. Each
+service has `test_health.py` loading `main.py` by explicit path (all share the basename).
+Standard tests: health reachable unauthenticated (200), main endpoint 401 without API key.
+Root `tests/` holds cross-cutting tests belonging to no single service (the shared `security/`
+middleware). `ci.yml` passes paths explicitly, which **overrides `testpaths`** — add new
+directories in both places or they silently never run in CI.
 
 **CI** — `ci.yml` installs *all* service requirements into ONE env, so a heavy dependency
 collides across services. That is why CrewAI has its own isolated `test-crew` job (it conflicts
-with triage's `numpy<2.5`, required by shap's numba). Both workflows trigger on push to `main`
-**and** on PRs targeting `main` — so open a PR to get verification.
+with triage's `numpy<2.5`, required by shap's numba). `terraform-aws` validates
+`terraform/aws/` only, with `init -backend=false` — no credentials, no AWS contact.
+Both workflows trigger on push to `main` **and** on PRs targeting `main` — so open a PR to
+get verification.
 
 ---
 
@@ -151,9 +172,9 @@ CSP forbade `unsafe-eval`, killing React Fast Refresh and therefore all hydratio
 ## Verification commands
 
 ```bash
-# Python
-python -m flake8 services/ etl/ --count --select=E9,F63,F7,F82 && python -m black --check services/ etl/
-pytest services/ -v
+# Python  — use `py -3.14`, NOT bare `python`/`pytest`. See the local env note below.
+py -3.14 -m flake8 services/ etl/ --count --select=E9,F63,F7,F82 && py -3.14 -m black --check services/ etl/
+py -3.14 -m pytest services/ tests/ -v
 
 # Frontend  (NEVER run `npm run build` while `next dev` is running — both write .next/ and it corrupts)
 cd frontend && npx tsc --noEmit && npx eslint . --max-warnings 0 && npm run build
@@ -165,9 +186,19 @@ cd packages/db && npx prisma validate
 docker compose config && docker compose up -d
 ```
 
-**Local env note:** dev machine runs Python 3.14; containers are 3.12. CrewAI needs <3.14, so
-verify crew in Docker, not locally. Port 5432 is often taken by another project's
-`community-ride-db` — our postgres then fails to bind.
+**Local env note:** dev machine has **two** Pythons and the wrong one is on PATH.
+`py -3.14` holds the app dependencies (fastapi, jwt, groq, sklearn) — but bare `pytest.exe`
+resolves to **3.13**, which has pytest and nothing else, so every service test dies at
+`ModuleNotFoundError: No module named 'jwt'` during collection. That is a PATH artifact, not
+a broken test. Always `py -3.14 -m pytest`.
+
+Containers are 3.12. CrewAI needs <3.14, so verify crew in Docker, not locally — its tests
+skip on 3.14 (expect `34 passed, 4 skipped`, ~4 min, mostly shap/xgboost import time).
+`terraform` is **not installed locally** — `fmt -check` and `validate` run only in CI, and
+only against `terraform/aws/`.
+Note `black --check` in CI covers `services/ etl/` **only** — `security/` has never been
+black-formatted and 7 files there would be reformatted if the scope were widened. Port 5432
+is often taken by another project's `community-ride-db` — our postgres then fails to bind.
 
 ---
 
@@ -182,11 +213,17 @@ healthcheck fix (PR #13). CI green on both pipelines.
 - **Module 10 migration written but NOT applied**:
   `packages/db/prisma/migrations/20260726000000_followup_agent/` → `npx prisma migrate deploy`.
 - **Module 10 Parts E (ML) and F (dashboard page)** deferred until follow-up data exists.
-- **Module 11 (AWS)** planned, not started: sentiment → Lambda + Function URL, triage artifacts
-  → S3, secrets → SSM Parameter Store, budget alerts first. ~$5/mo ceiling. Critical prerequisites:
-  `.gitignore` has **no** `*.tfstate` / `.terraform/` / `*.tfvars` patterns (local state would be
-  committable), and `API_KEY_HASHES` **must** be set or the public Function URL accepts
-  `rams-elec-frontend-2026`, which is committed in this repo.
+- **Module 11 (AWS)** — prerequisites done, nothing provisioned. `terraform/aws/` exists and
+  contains **only** the two AWS Budgets resources; that is the intended order, not an
+  unfinished state. Still to build: sentiment → Lambda + Function URL, triage artifacts → S3,
+  secrets → SSM Parameter Store. ~$5/mo ceiling.
+  Every billable resource added must carry `depends_on = [aws_budgets_budget.monthly_cost]`.
+  Nothing has been applied — no AWS account has been touched.
+- **`terraform/` (Azure) has never been run through `terraform validate`.** The new
+  `terraform-aws` CI job deliberately excludes it so it fails on changed code, not on
+  pre-existing issues. Validating it is its own task — expect real errors (e.g.
+  `azurerm_postgresql_flexible_server.delegated_zone_id` looks like it should be
+  `delegated_subnet_id`; unverified).
 - **GitHub Dependency Review fails** on every PR — repo setting, not code. Enable Dependency graph
   in Settings → Code security.
 - **v0.dev credits (~$4)** unspent; `HeroSection` and `SecurityTrustSection` untouched by v0.

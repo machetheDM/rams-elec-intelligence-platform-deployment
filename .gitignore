@@ -76,6 +76,39 @@ credentials*.json
 *-credentials.json
 .streamlit/secrets.toml
 
+# --- Terraform / IaC ---
+# State is the dangerous one: `terraform apply` writes every attribute of every
+# resource into terraform.tfstate in PLAINTEXT, including generated passwords,
+# API key hashes, and Function URLs. Without these patterns a routine `git add -A`
+# commits credentials. Plan files carry the same payload.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+*.tfplan
+tfplan
+# .tfvars hold the actual values for variables.tf. The *.example variants are
+# committed on purpose as documentation.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+# The provider lock file SHOULD be committed — it pins provider checksums, which
+# is a supply-chain control. Listed here only to make the exclusion deliberate.
+!.terraform.lock.hcl
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# --- Cloud credentials ---
+.aws/
+aws-credentials*
+*.aws-creds
+.azure/
+credentials.csv
+
 # --- Docker ---
 docker-compose.override.yml
 

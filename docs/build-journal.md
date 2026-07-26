@@ -290,3 +290,116 @@ Added `CLAUDE.md` at the repo root — architecture, the conventions that get vi
 silent-no-op bug class, verification commands, and current open threads. Claude Code loads it
 automatically each session, so returning to this project after a long gap (or handing it to
 someone else) no longer depends on reconstructing intent from the diff.
+
+---
+
+## Module 11 (AWS): the two things that had to happen before any deployment — 2026-07-26
+
+Module 11 puts the sentiment service on a Lambda Function URL. A Function URL is a public
+HTTPS endpoint on the open internet — the first genuinely public surface this project has had.
+Two prerequisites were identified while scoping it, and both were addressed before writing a
+single line of deployment code, because both stop being fixable the moment they are exercised.
+
+### Prerequisite 1: the API key middleware fell open, not closed
+
+`security/auth/api_key_middleware.py` read `API_KEY_HASHES` from the environment and, when it
+was unset, fell back to the SHA-256 hashes of three keys hardcoded in the file:
+
+```python
+API_KEY_HASHES_RAW = os.getenv("API_KEY_HASHES", ",".join([
+    _hash_key("rams-elec-frontend-2026"), ...
+]))
+```
+
+On a laptop this is a convenience — `docker compose up` works with no setup. On a Function URL
+it is an open endpoint, because those three strings are committed to a public repository: in
+that file, in `.env.example`, in `docker-compose.yml`, in `ci.yml`, and in five service test
+files. Anyone who has read the repo can authenticate.
+
+The instinct is to delete the defaults. That breaks local development and every service test,
+which is presumably why they were there. The actual problem is not the defaults — it is that
+the *absence of configuration* selected the permissive branch. So the branch is now selected by
+`APP_ENV` instead:
+
+- `development` (the default): unchanged behaviour, plus a warning.
+- anything else: `API_KEY_HASHES` is required, and the module raises `RuntimeError` **at import**
+  without it. A service that refuses to boot is a visible failure. A service quietly accepting a
+  published key is not — which is the same silent-success bug class this project keeps finding,
+  just pointed at authentication.
+
+Two details worth keeping:
+
+**Only the literal string `development` is permissive.** `staging`, `production`, a typo like
+`prodution`, and an empty string all fail closed. An unrecognised environment must never be the
+open branch — that is precisely the case nobody tests.
+
+**Supplying a committed key's hash explicitly also fails.** Hashing a public string does not make
+it a secret; the hash is as computable as the key. Without this check the natural deployment
+mistake — copying `.env.example` forward and setting `API_KEY_HASHES` to what was already there —
+would satisfy the new requirement while changing nothing. The check exists because the fix would
+otherwise have been theatre.
+
+`tests/test_api_key_env_gate.py` covers all of it, including end-to-end through the middleware:
+with `APP_ENV=production`, `rams-elec-frontend-2026` gets a 401 through both the header and the
+query-parameter path. This is the first test in the repo that belongs to no single service, hence
+the new root `tests/` directory — added to `pytest.ini`'s `testpaths` *and* to the `ci.yml`
+invocation, which passes paths explicitly and would otherwise have ignored `testpaths` and never
+run them. A test that silently never runs is the same bug class again.
+
+### Prerequisite 2: Terraform state was committable
+
+`.gitignore` had no `*.tfstate`, `.terraform/`, `*.tfvars`, or `*.tfplan` patterns — the repo
+predates having any Terraform that gets applied. `terraform apply` writes every attribute of
+every resource into `terraform.tfstate` in plaintext, including generated passwords and anything
+passed through a variable. One routine `git add -A` after the first apply would have committed
+them to a public repository. Fixed before the first apply rather than after, because the remedy
+afterwards is key rotation and a history rewrite.
+
+The related rule, written into `terraform/aws/README.md`: nothing secret goes into a `.tfvars`
+file, a variable, or an output. Runtime secrets go to SSM Parameter Store as `SecureString`,
+created out of band. A secret routed through Terraform to keep it out of the repo lands in state
+in plaintext instead — which is the same exposure with more steps.
+
+### What was actually built: the budget, and deliberately nothing else
+
+`terraform/aws/` currently contains two `aws_budgets_budget` resources and no billable
+infrastructure at all. That is the finished state of this step, not a stopping point. A budget
+created after a runaway resource tells you what you already owe.
+
+The ordering is enforced twice, because Terraform's dependency graph has no concept of a
+guardrail: procedurally via `terraform apply -target=aws_budgets_budget.monthly_cost` as its own
+step, and structurally by requiring every billable resource added later to carry
+`depends_on = [aws_budgets_budget.monthly_cost]`.
+
+Two budgets, not one. The `$5` monthly ceiling is blind to the *shape* of the spend — `$5` spread
+evenly across a month and `$5` burned in one afternoon by a misconfigured loop trip it at exactly
+the same moment, but only one of those is still recoverable. A `$1` daily tripwire catches the
+second case about a day in. The monthly budget's forecast alert does similar work from the other
+direction: it fires on trajectory, days before the money is gone, which is the only alert that
+arrives while there is still something to do about it.
+
+Stated plainly in the README, because it is the kind of thing a cost guardrail is assumed to do
+and does not: **AWS Budgets alerts on spend, it does not cap it.** Nothing in that module will
+stop a charge. `aws_budgets_budget_action` can attach a deny-all IAM policy at 100%, which is the
+only mechanism that genuinely halts spending — deliberately not used, on the grounds that locking
+oneself out of the account has a larger blast radius than a $5 overrun on a portfolio project.
+Recorded as a trade-off rather than silently omitted.
+
+### Note on the repository's two Terraform roots
+
+`terraform/` is Azure, designed for ECCU524 and **never provisioned**. `terraform/aws/` is
+intended to actually run. Keeping them as separate root modules is partly mechanical — one state
+file cannot sensibly hold two providers — but mostly it is to keep the claim honest. The Azure
+config is an architecture document written in HCL, the README says so, and adding a directory
+next to it that *does* get applied is exactly the situation where that distinction quietly erodes.
+Both READMEs now name the difference explicitly.
+
+Nothing has been applied. No AWS account has been touched.
+
+### Lessons learned
+
+Both prerequisites share a shape with the silent no-op class already catalogued in `CLAUDE.md`,
+inverted: not an operation that fails while reporting success, but a *missing* configuration that
+succeeds while providing no protection. Unset `API_KEY_HASHES` authenticated everyone. Absent
+gitignore patterns protected nothing. Neither would have produced an error, a failed test, or a
+line in a log — and both would have been discovered from the outside.
