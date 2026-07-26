@@ -240,3 +240,53 @@ already refuses to train on fabricated sensor data; training a failure-recurrenc
 follow-ups would be the same error wearing a different hat. What's shippable today is the thing
 that generates valid labels — and saying exactly that, in the README and the docs, is the part
 that keeps the rest of the claims credible.
+
+---
+
+## Fix: every Docker healthcheck was broken — 2026-07-26
+
+### What was found
+
+First time the stack ran on a real Docker daemon, all four services returned
+`{"status":"healthy"}` from their own endpoints while `docker compose ps` reported every one as
+`unhealthy`. Cause: all seven healthchecks were `["CMD", "curl", "-f", ...]`, and neither
+`python:3.12-slim` nor `node:20-alpine` ships curl.
+
+```
+$ docker compose exec -T triage sh -c "command -v curl || echo 'CURL NOT FOUND'"
+CURL NOT FOUND
+$ docker inspect rams-elec-triage --format '{{range .State.Health.Log}}{{.ExitCode}}{{end}}'
+-1   # exec: "curl": executable file not found in $PATH
+```
+
+Fixed by probing with the interpreter already in each image — `python -c` for the six FastAPI
+services, `node -e` for `web` — rather than adding an apt layer to six images for a liveness check.
+
+### Why it mattered more than it looked
+
+`depends_on: condition: service_healthy` can never be satisfied if the probe can't execute. So
+`docker compose up -d postgres triage loadshedding chatbot dispatch` started nothing and sat there.
+The workaround at the time was `--no-deps`, which skips dependency ordering entirely — i.e. the
+broken probe disguised itself as a startup-ordering problem, and the workaround hid the real cause.
+
+After the fix, exit codes are `0` and both `dispatch` and `loadshedding` report `(healthy)` —
+a state that was previously unreachable.
+
+### Lessons learned
+
+This is the **third** instance of the same bug class in this project: an operation that fails or
+does nothing while reporting success. The other two were `status = "Complete"` matching zero rows
+against lowercase data, and `/loadshedding/subscribe` returning `{"status":"subscribed"}` without
+checking `rowcount`. All three were invisible in code review and only appeared when something
+actually ran. The pattern is now recorded at the top of `CLAUDE.md` so it gets looked for first.
+
+Also worth noting: I introduced one of the seven broken healthchecks myself, by copying the
+existing pattern when adding `services/sentiment`. A wrong convention propagates silently, which is
+why the fix carries an explanatory comment above the first healthcheck rather than just working.
+
+### Project context persisted
+
+Added `CLAUDE.md` at the repo root — architecture, the conventions that get violated, the
+silent-no-op bug class, verification commands, and current open threads. Claude Code loads it
+automatically each session, so returning to this project after a long gap (or handing it to
+someone else) no longer depends on reconstructing intent from the diff.
