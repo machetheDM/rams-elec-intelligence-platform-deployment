@@ -1,7 +1,23 @@
 # CLAUDE.md — Rams @Elec Intelligence Platform
 
 Context for AI assistants and for future-me returning after a break. Read this before changing
-anything. Keep it updated when architecture or conventions change.
+anything.
+
+## Maintaining this file — for the assistant
+
+**Update this file in the same commit as the change, without being asked.** It is the only thing
+that survives between sessions; if it drifts, the next session starts blind. Triggers:
+
+- A new service, package, or top-level directory → update the architecture table
+- A convention discovered the hard way (a silent failure, a footgun, a "why is it like this")
+  → add it under Conventions or the silent-no-op section
+- A module completed, deferred, or abandoned → update State
+- An open thread closed (PR merged, migration applied) → remove it from Open
+- A deliberate refusal (fabricated data, unverifiable claim) → record it under the honesty
+  principle, so a later session doesn't helpfully undo it
+
+Keep it scannable. This is an operating manual, not a changelog — chronology and reasoning belong
+in `docs/build-journal.md`. If something here is stale, fix it rather than appending a correction.
 
 ---
 

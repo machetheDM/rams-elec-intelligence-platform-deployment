@@ -36,3 +36,9 @@ Keep a build journal (`docs/build-journal.md`) updated after each module with:
 - Key decisions made
 - Challenges encountered
 - Lessons learned
+
+## Project Context
+
+Update `CLAUDE.md` in the same commit as any change to architecture, conventions, or module
+status. It is the context an assistant (or a returning contributor) loads first, and it is the
+only record that survives between sessions.
