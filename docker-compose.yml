@@ -210,6 +210,7 @@ services:
       # without exposing the internal API key to the browser.
       - TRIAGE_SERVICE_URL=http://triage:8001
       - CHATBOT_SERVICE_URL=http://chatbot:8003
+      - LOADSHEDDING_SERVICE_URL=http://loadshedding:8002
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-rams-elec-frontend-2026}
     depends_on:
       triage:
