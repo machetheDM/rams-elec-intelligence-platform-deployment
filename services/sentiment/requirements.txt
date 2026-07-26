@@ -11,3 +11,9 @@ python-dotenv>=1.0.0
 
 # Required by security.setup -> security.auth.jwt_middleware
 pyjwt>=2.9.0
+
+# ASGI -> Lambda adapter (Module 11). Listed here rather than in a separate
+# requirements-lambda.txt so CI installs it and test_lambda_handler.py can
+# actually import the handler; it is ~20KB and unused outside Lambda.
+# boto3 is NOT listed: the Lambda runtime provides it.
+mangum>=0.17.0

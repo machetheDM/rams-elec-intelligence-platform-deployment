@@ -32,6 +32,30 @@ output "daily_tripwire_usd" {
   value       = var.daily_budget_usd
 }
 
+# Public by construction — authorization_type is NONE and authorisation is the
+# application's API key gate. Printing it leaks nothing that a port scan of the
+# lambda-url namespace would not find; the secret is the key, not the address.
+output "sentiment_function_url" {
+  description = "Public HTTPS endpoint for the sentiment service. Requires X-API-Key."
+  value       = aws_lambda_function_url.sentiment.function_url
+}
+
+output "artifacts_bucket" {
+  description = "Private bucket holding triage model artifacts."
+  value       = aws_s3_bucket.artifacts.id
+}
+
+output "sentiment_log_group" {
+  description = "CloudWatch log group for the sentiment function."
+  value       = aws_cloudwatch_log_group.sentiment_lambda.name
+}
+
+# Names only — the values are SecureStrings and must never be output.
+output "ssm_config_path" {
+  description = "SSM Parameter Store prefix the function reads configuration from."
+  value       = local.ssm_config_path
+}
+
 output "guardrail_warning" {
   description = "What the budgets do and do not do."
   value       = "AWS Budgets alerts on spend; it does not cap it. An alert is a signal to go and destroy something, not a limit that will stop the charge."

@@ -117,6 +117,22 @@ Concretely, things that have been deliberately *refused*:
 - `VALID_API_KEY_HASHES` resolves at import, so tests must `importlib.reload` and restore.
   See `tests/test_api_key_env_gate.py` for the fixture pattern.
 
+**Lambda packaging** (`scripts/build_lambda.py` → `dist/sentiment-lambda.zip`)
+- The zip is **flat**: `main.py`, `lambda_handler.py`, and `security/` all at the root,
+  because Lambda puts `/var/task` on `sys.path`. Copying the repo tree breaks both imports.
+- Dev machine is Windows, Lambda is Linux — the build pins
+  `--platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all:` so a missing
+  Linux wheel fails the *build*, not the first invocation (`pydantic_core` is the one that
+  bites).
+- pip emits **Windows `.exe`** console-script launchers into `bin/` even under `--platform`,
+  and they are not reproducible. They are pruned, along with `*.dist-info/RECORD` which
+  records their hashes. Without that, `source_code_hash` changes on every rebuild and
+  Terraform shows a permanent diff.
+- `lambda_handler.py` imports `main` **at the bottom of the file, on purpose**:
+  `VALID_API_KEY_HASHES` resolves at import, so SSM config must be in `os.environ` first.
+  Moving that import up yields a Lambda that raises on every request.
+- boto3 is not vendored; the runtime provides it.
+
 **Terraform** — two root modules, no shared state, and `terraform` does not recurse.
 `terraform/*.tf` is **Azure, designed and never provisioned** (ECCU524). `terraform/aws/*.tf`
 is **Module 11, intended to actually run**. Do not blur these, and do not add AWS resources
@@ -213,12 +229,15 @@ healthcheck fix (PR #13). CI green on both pipelines.
 - **Module 10 migration written but NOT applied**:
   `packages/db/prisma/migrations/20260726000000_followup_agent/` → `npx prisma migrate deploy`.
 - **Module 10 Parts E (ML) and F (dashboard page)** deferred until follow-up data exists.
-- **Module 11 (AWS)** — prerequisites done, nothing provisioned. `terraform/aws/` exists and
-  contains **only** the two AWS Budgets resources; that is the intended order, not an
-  unfinished state. Still to build: sentiment → Lambda + Function URL, triage artifacts → S3,
-  secrets → SSM Parameter Store. ~$5/mo ceiling.
-  Every billable resource added must carry `depends_on = [aws_budgets_budget.monthly_cost]`.
-  Nothing has been applied — no AWS account has been touched.
+- **Module 11 (AWS)** — written, **never applied. No AWS account has been touched.**
+  `terraform/aws/` now defines budgets, the sentiment Lambda + Function URL, the artifacts
+  bucket, and a least-privilege execution role. ~$5/mo ceiling.
+  Every billable resource carries `depends_on = [aws_budgets_budget.monthly_cost]` — keep
+  that up on anything added.
+  Terraform deliberately does **not** create the SSM parameters: a value passed through
+  Terraform lands in state in plaintext. `groq_api_key` and `api_key_hashes` are created
+  out of band with `aws ssm put-parameter --type SecureString`, before the first apply.
+  Remaining: upload triage artifacts to the bucket, point n8n at the Function URL.
 - **`terraform/` (Azure) has never been run through `terraform validate`.** The new
   `terraform-aws` CI job deliberately excludes it so it fails on changed code, not on
   pre-existing issues. Validating it is its own task — expect real errors (e.g.

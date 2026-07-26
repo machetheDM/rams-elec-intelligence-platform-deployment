@@ -66,6 +66,14 @@ provider "aws" {
 }
 
 locals {
+  name_prefix             = "rams-elec"
+  sentiment_function_name = "rams-elec-sentiment"
+
+  # Trailing slash matters: lambda_handler.py derives environment variable names
+  # from the segment after the final "/", and the IAM policy appends "*" to this
+  # to scope GetParametersByPath.
+  ssm_config_path = "/rams-elec/sentiment/"
+
   common_tags = {
     Project     = "Rams @Elec Intelligence Platform"
     Environment = var.environment

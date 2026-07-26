@@ -403,3 +403,97 @@ inverted: not an operation that fails while reporting success, but a *missing* c
 succeeds while providing no protection. Unset `API_KEY_HASHES` authenticated everyone. Absent
 gitignore patterns protected nothing. Neither would have produced an error, a failed test, or a
 line in a log — and both would have been discovered from the outside.
+
+---
+
+## Module 11: packaging the sentiment service for Lambda — 2026-07-26
+
+### Mangum, not a native handler
+
+The endpoint could have been rewritten as a plain `def handler(event, context)` — less code,
+no adapter dependency. It would also have silently dropped the entire `security/` middleware
+stack: API key auth, rate limiting, security headers, input sanitisation, audit logging. On a
+public Function URL that is the wrong trade in every direction, so the FastAPI app is wrapped
+with Mangum and requests still traverse the full stack.
+
+`test_lambda_handler.py` asserts that rather than assuming it: a synthetic Function URL event
+(payload format 2.0) for `POST /sentiment/analyze` with no key returns **401**, and the health
+response carries `X-Frame-Options` and a CSP. Without those tests "requests still go through
+the middleware" is an intention, not a fact.
+
+### The import order is load-bearing
+
+`VALID_API_KEY_HASHES` resolves at *import*. SSM configuration therefore has to be in
+`os.environ` before `main` is imported — not before the handler is invoked. So
+`lambda_handler.py` imports `main` at the **bottom** of the file, after `_load_ssm_config()`.
+
+Moving that import up to join the others is the natural tidy-up, and it would produce a Lambda
+that raises on every single request: `APP_ENV=production` with `API_KEY_HASHES` not yet loaded.
+The docstring says so in as many words, because the failure is invisible in review.
+
+Related: the SSM loader deliberately does not catch exceptions. If the execution role is
+missing `ssm:GetParametersByPath`, the function must fail on *that*, not boot and then fail
+later in the API key gate with a message about configuration. Fail on the actual cause.
+
+### Two things Windows quietly does wrong to a Linux artifact
+
+The dev machine is Windows and Lambda is Linux, which breaks a naive `pip install -t`:
+
+1. **Wheel platform.** Plain `pip install -t` resolves `win_amd64` wheels for anything with
+   compiled extensions — `pydantic_core` above all — and the function dies at cold start with
+   `ModuleNotFoundError: pydantic_core._pydantic_core`. Pinning
+   `--platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all:` moves that from
+   a deploy-time failure to a build-time one. Verified in the artifact:
+   `pydantic_core/_pydantic_core.cpython-312-x86_64-linux-gnu.so`.
+
+2. **Windows `.exe` launchers.** pip generates console-script shims from the *local* platform
+   even under `--platform`, so the package contained `bin/fastapi.exe`, `bin/httpx.exe`, and
+   friends — Windows binaries, in a Linux Lambda, that nothing can execute.
+
+The second only surfaced because reproducibility was tested rather than assumed. The zip writer
+already pinned every entry's timestamp to 1980-01-01 specifically so `source_code_hash` would be
+stable, and the comment saying so was wrong: two consecutive builds of identical source produced
+different hashes. The diff pointed at the `.exe` files — pip embeds something non-reproducible in
+each one — and at the `*.dist-info/RECORD` files that record their hashes. Pruning all of it made
+the build byte-identical across runs and dropped 0.2MB of Windows executables that could never
+have run.
+
+That matters beyond tidiness: a `source_code_hash` that changes on every build means Terraform
+reports a Lambda update on every `plan`, which is exactly how people learn to stop reading plan
+output.
+
+Final artifact: 3.5MB, flat layout (`main.py`, `lambda_handler.py`, `security/` at the root,
+because Lambda puts `/var/task` on `sys.path`), boto3 excluded since the runtime provides it.
+
+### Cost controls are structural, not just alerts
+
+The budgets from the previous entry notify; they cannot stop anything. So the ceiling is mostly
+held by design decisions in the Terraform:
+
+- `reserved_concurrent_executions = 5` — a retry loop scales to five, not to the account limit.
+  Budget alerts are evaluated on a schedule and would arrive long after that spend.
+- `timeout = 30s` — a hung upstream call cannot bill for minutes.
+- An **explicitly created** log group with 14-day retention. A log group that Lambda creates
+  implicitly on first invocation has retention "Never expire" and accrues storage forever. This
+  is probably the most common way a free-tier AWS project starts costing money.
+- `noncurrent_version_expiration` on the artifacts bucket, so versioning does not turn a few MB
+  into unbounded growth.
+- SSE-S3 rather than a customer-managed KMS key: a CMK is $1/month, 20% of the entire budget, to
+  encrypt a model artifact that contains no personal data and is already private.
+
+### Function URL auth: NONE, and why that is defensible
+
+`authorization_type = "NONE"` means AWS performs no authentication and authorisation is entirely
+the application's job. `AWS_IAM` was the alternative and was rejected: the caller is an n8n
+workflow that would have to implement SigV4 signing, and the realistic outcome of that friction
+is a long-lived IAM access key pasted into an n8n credential — a worse secret to hold than an API
+key hash in SSM.
+
+This is only a defensible choice *because* the API key middleware now fails closed. It did not,
+until earlier the same day. The two decisions are load-bearing on each other, which is why the
+reasoning sits in `lambda.tf` next to the resource rather than only here.
+
+### Still not applied
+
+Nothing has been provisioned. No AWS account has been touched. The Terraform is written and CI
+validates it; the first `terraform apply` has not been run.

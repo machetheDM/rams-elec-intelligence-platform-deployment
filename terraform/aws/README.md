@@ -3,25 +3,53 @@
 Real deployment target, real account, real (small) charges. This is not the Azure
 configuration one directory up, which is designed and deliberately never provisioned.
 
-**What exists right now: the cost guardrails, and nothing else.** No Lambda, no S3 bucket,
-no SSM parameters. That is the intended order, not an unfinished state — the budget is the
-one resource that has to exist before the resources it protects you from.
-
 ## Apply order
 
+The budget goes up in its own apply, before anything billable exists. Secrets are created
+out of band, before the function that reads them.
+
 ```bash
+# 1. Build the deployment package (writes dist/sentiment-lambda.zip)
+py -3.14 scripts/build_lambda.py
+
+# 2. Configure
 cd terraform/aws
 cp terraform.tfvars.example terraform.tfvars   # then set alert_email
 terraform init
+
+# 3. Cost guardrail FIRST, on its own
 terraform apply -target=aws_budgets_budget.monthly_cost
+
+# 4. Secrets, out of band — never through Terraform (see "Secrets" below)
+aws ssm put-parameter --name /rams-elec/sentiment/groq_api_key \
+    --type SecureString --value "<your Groq key>"
+aws ssm put-parameter --name /rams-elec/sentiment/api_key_hashes \
+    --type SecureString --value "<sha256 hash(es), comma-separated>"
+
+# 5. Everything else
 terraform apply
 ```
 
-Step 4 is not ceremony. `-target` forces the guardrail up in its own apply, so that if
-step 5 half-fails partway through creating something billable, the alerting is already
-live. Every billable resource added later must also carry
-`depends_on = [aws_budgets_budget.monthly_cost]`, so a fresh `terraform apply` in a clean
-account gets the same ordering without the `-target`.
+Step 3 is not ceremony. `-target` forces the guardrail up in its own apply, so that if a
+later step half-fails partway through creating something billable, the alerting is already
+live. Every billable resource also carries `depends_on = [aws_budgets_budget.monthly_cost]`,
+so a fresh apply in a clean account gets the same ordering without the `-target`.
+
+Step 4 must precede step 5. The function sets `APP_ENV=production`, so if
+`api_key_hashes` is absent from SSM the middleware raises at import and every invocation
+fails — deliberately. Generate a key and its hash with the command in `.env.example`.
+
+## What gets created
+
+| Resource | Purpose | Cost |
+|---|---|---|
+| 2 × `aws_budgets_budget` | $5/month ceiling, $1/day tripwire | free |
+| `aws_lambda_function` + Function URL | sentiment service, public HTTPS | free tier |
+| `aws_cloudwatch_log_group` | 14-day retention, set explicitly | pennies |
+| `aws_s3_bucket` | triage model artifacts, private + versioned | ~$0.12/mo |
+| `aws_iam_role` + inline policy | least-privilege execution role | free |
+
+**Terraform does not create the SSM parameters.** See "Secrets".
 
 ## What the budgets do
 
@@ -66,9 +94,22 @@ locking is correct for a team and is stubbed out in `main.tf`, but it adds a buc
 table to a $5 budget to solve a concurrency problem that a single operator does not have.
 The real risk here is committing state, not losing it, and the ignore patterns address that.
 
+## Cost controls, in one place
+
+The $5 ceiling is enforced by design decisions, not only by the alerts:
+
+| Control | Where | Stops |
+|---|---|---|
+| `reserved_concurrent_executions = 5` | `lambda.tf` | a retry loop scaling to the account limit |
+| `timeout = 30s` | `lambda.tf` | a hung request billing for minutes |
+| explicit log group, 14-day retention | `lambda.tf` | logs accruing forever, the usual free-tier leak |
+| `noncurrent_version_expiration` | `s3.tf` | versioning turning a few MB into unbounded growth |
+| SSE-S3 rather than a KMS CMK | `s3.tf` | $1/month — 20% of the budget — for no gain here |
+| budget + daily tripwire | `budgets.tf` | nothing; it tells you, and only after the fact |
+
 ## Next
 
-- Package `services/sentiment` for Lambda (Mangum adapter over the existing FastAPI app)
-- Function URL with `AWS_IAM` or the API key gate above
-- Triage model artifacts (`*.pkl`, `metrics.json`) to a private, versioned S3 bucket
-- `GROQ_API_KEY` and `API_KEY_HASHES` into SSM Parameter Store
+- Upload the triage artifacts (`*.pkl`, `metrics.json`) to the bucket and have the triage
+  service read from S3 when running outside Docker
+- Point the n8n follow-up workflow at the Function URL
+- Nothing here has been applied yet — the first `terraform apply` is still pending
