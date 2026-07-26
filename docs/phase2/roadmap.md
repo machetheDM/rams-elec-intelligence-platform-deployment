@@ -9,6 +9,16 @@ Features documented but NOT built — deferred because they require data infrast
 ### Why Deferred
 Rams @Elec has no sensors installed at client premises. Training on fabricated sensor data would have no real-world validity and would be misleading to demonstrate.
 
+> **Partially superseded by Module 10** (`docs/followup-agent.md`). The goal behind this feature
+> — knowing which equipment is likely to fail again — needs a *failure label*, not necessarily
+> sensors. A customer answering "no, it's not working" days after a repair is that label,
+> gathered through a channel the business already uses.
+>
+> This does not make the IoT hub unnecessary. Sensor telemetry is continuous, objective and
+> high-resolution; customer reports are sparse, subjective and response-biased. Module 10 buys a
+> real label at the cost of precision, which makes this feature **non-blocking** rather than
+> obsolete.
+
 ### Architecture When Ready
 - **Data Ingestion**: MQTT broker receiving streams from IoT sensors (temperature, vibration, current draw, humidity) installed on client cold rooms, generators, and HVAC units
 - **Storage**: New `sensor_readings` table in PostgreSQL with timescale partitioning

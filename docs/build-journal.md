@@ -172,3 +172,71 @@ looks entirely correct in a demo and is wrong in a way no exception surfaces. Wr
 deterministic components in an LLM means the determinism is now a claim you have to actively
 verify, not a property you still get for free. That is the whole reason the guard and the
 benchmark exist rather than just the crew.
+
+---
+
+## Module 10 — Post-Service Follow-up Agent (Parts A, B, C, D, G) — 2026-07-26
+
+### What was built
+
+A pipeline that captures equipment-failure signal from customers instead of sensors:
+
+- **`FollowUp` table** (`packages/db/prisma/schema.prisma`) + a hand-authored migration in the
+  existing house style. Also `Equipment.riskScore`/`riskScoredAt` for the future model to write
+  into, and `Customer.followUpConsent`/`followUpConsentAt`. **Migration written, not applied.**
+- **`etl/dags/followup_trigger_dag.py`** — daily DAG selecting completed jobs past their
+  threshold (3 days urgent / 7 standard), creating `follow_ups` rows and calling n8n. Added
+  `httpx` to `etl/requirements.txt`, which it needed and did not have.
+- **`services/sentiment`** (:8006) — scores free-text comments and tags them against a fixed,
+  closed taxonomy.
+- **`n8n/workflows/followup_conversation_workflow.json`** — the YES/NO conversation, explicitly
+  labelled as designed-not-provisioned.
+- **`docs/followup-agent.md`**, plus README rows and a roadmap cross-reference.
+
+### Five bugs in the original spec, found by checking it against the schema
+
+None of these would have surfaced until runtime:
+
+1. `status = "Complete"` matches **zero rows** — `Job.status` values are lowercase
+   (`open | assigned | in_progress | complete | cancelled`).
+2. `Inquiry.assignedJobId` is `@unique`, i.e. 1:1. The spec's "create a new Inquiry linked to
+   the original job" would violate that constraint — the original job already consumed it. The
+   join path is `Job <- FollowUp -> Inquiry` via the spec's own `followUpInquiryId`, so no
+   schema change to `Inquiry` was needed.
+3. `Inquiry` has no string `urgency` column; it has `urgencyScore Float?`. `urgency: "high"`
+   doesn't map — follow-up issues use `urgency_score = 0.8`.
+4. The proposed `FollowUp` model carried no `@map`/`@@map`/`@@index`, so it would have created
+   camelCase columns in a database where every other table is snake_case.
+5. `Equipment` had no risk field at all, though Part E writes `risk_score` back to it.
+
+### Key decisions
+
+- **POPIA consent is a schema field and a SQL precondition, not documentation.** `alertSubscribed`
+  already existed but is scoped to load-shedding alerts; reusing it to justify satisfaction
+  surveys is the consent-creep POPIA prohibits. The new `follow_up_consent` is filtered in the
+  DAG's selection query, so a customer without consent is never *selected* — no downstream bug,
+  replay, or refactor can message them, because there is no code path that skips the check.
+- **The sentiment service does not trust its own LLM.** Themes outside the fixed taxonomy are
+  discarded rather than coerced to `other` (a hallucinated theme is not evidence of that theme),
+  the score is clamped to [-1.0, 1.0], and an `analyzed: false` flag distinguishes a real neutral
+  score from a fallback one — so a Groq outage can't quietly write fabricated 0.0s into the
+  database as though they were measurements.
+- **Reused rather than rebuilt**: `NotificationLog` for message logging, `MaintenanceSchedule` as
+  the risk-flagging target. Neither needed a parallel table.
+- **The n8n workflow sends `X-API-Key`**, which the three pre-existing workflows do not — those
+  predate the Module 2 hardening and would 401 today. Left them alone: fixing them is a separate
+  change with its own testing, and burying it inside an unrelated module would hide it.
+
+### Lessons learned
+
+The spec was thoughtful — it even anticipated the cold-start problem with a 100-record training
+guard. It was still wrong in five places, every one of which came from writing against a
+*remembered* schema rather than the actual one. `status = "Complete"` is the sharpest example: it
+would have deployed cleanly, run daily, found nothing, and reported success forever. A silent
+zero-row query is much worse than a crash, because nothing ever tells you.
+
+The other recurring theme: this module's honest output is a *pipeline*, not a model. The roadmap
+already refuses to train on fabricated sensor data; training a failure-recurrence model on zero
+follow-ups would be the same error wearing a different hat. What's shippable today is the thing
+that generates valid labels — and saying exactly that, in the README and the docs, is the part
+that keeps the rest of the claims credible.

@@ -1,0 +1,13 @@
+# Sentiment analysis service (Module 10)
+#
+# No DB driver: this service is stateless. n8n writes the returned score and
+# themes back onto the follow_ups row as part of the conversation workflow.
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+groq>=0.9.0
+httpx>=0.27.0
+pydantic>=2.9.0
+python-dotenv>=1.0.0
+
+# Required by security.setup -> security.auth.jwt_middleware
+pyjwt>=2.9.0

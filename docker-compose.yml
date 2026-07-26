@@ -165,6 +165,29 @@ services:
     restart: unless-stopped
 
   # =============================================================================
+  # FastAPI — Sentiment Analysis (Module 10)
+  # =============================================================================
+  # Stateless: n8n calls it with a customer's follow-up comment and writes the
+  # returned score/themes back onto the follow_ups row itself, so this service
+  # needs no DATABASE_URL.
+  sentiment:
+    build:
+      context: .
+      dockerfile: services/sentiment/Dockerfile
+    container_name: rams-elec-sentiment
+    env_file: .env
+    ports:
+      - "8006:8006"
+    environment:
+      - SENTIMENT_PORT=8006
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/sentiment/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # =============================================================================
   # Next.js Frontend
   # =============================================================================
   web:

@@ -56,6 +56,7 @@ jobs:
           pip install -r services/loadshedding/requirements.txt
           pip install -r services/chatbot/requirements.txt
           pip install -r services/dispatch/requirements.txt
+          pip install -r services/sentiment/requirements.txt
           pip install pytest pytest-cov
       - run: pytest services/ --cov=services --cov-report=xml --cov-report=term
         env:
@@ -113,6 +114,7 @@ jobs:
       - run: docker build -t rams-elec-loadshedding -f services/loadshedding/Dockerfile .
       - run: docker build -t rams-elec-chatbot -f services/chatbot/Dockerfile .
       - run: docker build -t rams-elec-crew -f services/crew/Dockerfile .
+      - run: docker build -t rams-elec-sentiment -f services/sentiment/Dockerfile .
       - run: docker build -t rams-elec-dashboard ./dashboard
       - run: docker build -f docker/Dockerfile.airflow -t rams-elec-airflow ./etl
 
