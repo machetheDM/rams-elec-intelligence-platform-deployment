@@ -25,6 +25,7 @@ graph TB
         LS[Load-Shedding<br/>FastAPI :8002<br/>EskomSePush API]
         CB[RAG Chatbot<br/>FastAPI :8003<br/>FAISS + Groq]
         DP[Dispatch Service<br/>FastAPI :8004<br/>Skillset Scoring]
+        CR[CrewAI Triage Crew<br/>FastAPI :8005<br/>3 agents · tools over HTTP]
     end
 
     subgraph "Data Layer"
@@ -68,7 +69,7 @@ graph TB
 |---|--------|-------------|--------|
 | 1 | Database Schema & Data Models | Star-schema PostgreSQL with Prisma ORM | 🔄 In Progress |
 | 2 | ETL Pipeline | Bronze→Silver→Gold medallion architecture | ⏳ Pending |
-| 3 | AI Inquiry & Triage Engine | NLP classification + XGBoost cost estimation | ⏳ Pending |
+| 3 | AI Inquiry & Triage Engine | NLP classification + XGBoost cost estimation (MAE R11,280 / R² 0.512) + CrewAI multi-agent path | ✅ Complete |
 | 4 | Load-Shedding Intelligence | EskomSePush integration + WhatsApp alerts | ⏳ Pending |
 | 5 | Customer Portal + RAG Chatbot | NextAuth.js + FAISS knowledge base | ⏳ Pending |
 | 6 | Analytics Dashboard | 6-page Streamlit dashboard | ⏳ Pending |
@@ -175,6 +176,7 @@ cd frontend && npm run dev &
 | Load-Shedding API Docs | http://localhost:8002/docs |
 | Chatbot API Docs | http://localhost:8003/docs |
 | Dispatch API Docs | http://localhost:8004/docs |
+| CrewAI Triage Docs | http://localhost:8005/docs |
 | Analytics Dashboard | http://localhost:8501 |
 
 ---
@@ -265,6 +267,7 @@ ramsatelec-intelligence/
 │   └── scripts/              # Synthetic data generator
 ├── services/
 │   ├── triage/               # AI inquiry classification + cost estimation
+│   ├── crew/                 # CrewAI multi-agent triage (3 agents, tools over HTTP)
 │   ├── loadshedding/         # EskomSePush integration + alerts
 │   ├── chatbot/              # RAG chatbot (FAISS + Groq)
 │   └── dispatch/             # Skillset-based technician assignment
@@ -293,6 +296,7 @@ ramsatelec-intelligence/
 | Auth | NextAuth.js v5 |
 | ML Microservices | FastAPI, scikit-learn, XGBoost, SHAP |
 | LLM/RAG | Groq llama-3.3-70b, FAISS, LangChain, sentence-transformers |
+| Multi-Agent | CrewAI (3-agent sequential crew, tools over internal HTTP) — see [docs/crewai-integration.md](docs/crewai-integration.md) |
 | Automation | n8n, Apache Airflow |
 | Notifications | Twilio (WhatsApp + SMS) |
 | Analytics | Streamlit, Plotly, Prophet |

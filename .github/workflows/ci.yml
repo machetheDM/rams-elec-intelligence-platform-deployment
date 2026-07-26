@@ -63,6 +63,35 @@ jobs:
           GROQ_API_KEY: test_key
           ESKOM_SE_PUSH_API_KEY: test_key
 
+  # ===========================================================================
+  # CrewAI runs in its OWN environment, deliberately.
+  # ===========================================================================
+  # test-python above installs all four other services' requirements into a
+  # single interpreter. CrewAI pulls litellm/instructor/openai/tiktoken, which
+  # would have to reconcile with triage's `numpy>=1.26,<2.5` pin (required by
+  # shap's numba). Isolating it here keeps that resolution conflict out of the
+  # shared job — the containers are already isolated, so CI now matches.
+  #
+  # services/crew/test_health.py is ALSO collected by test-python, where
+  # crewai is absent; its crew-specific tests skip via a CREW_AVAILABLE guard.
+  # This job is where they actually execute.
+  test-crew:
+    name: Test CrewAI Service (isolated env)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install -r services/crew/requirements.txt
+          pip install pytest
+      - run: pytest services/crew/ -v
+        env:
+          # No GROQ_API_KEY: the crew must degrade to a clean 503 rather than
+          # crash, and no test here should ever spend real tokens.
+          INTERNAL_API_KEY: rams-elec-frontend-2026
+
   test-nextjs:
     name: Build Next.js
     runs-on: ubuntu-latest
@@ -83,6 +112,7 @@ jobs:
       - run: docker build -t rams-elec-dispatch -f services/dispatch/Dockerfile .
       - run: docker build -t rams-elec-loadshedding -f services/loadshedding/Dockerfile .
       - run: docker build -t rams-elec-chatbot -f services/chatbot/Dockerfile .
+      - run: docker build -t rams-elec-crew -f services/crew/Dockerfile .
       - run: docker build -t rams-elec-dashboard ./dashboard
       - run: docker build -f docker/Dockerfile.airflow -t rams-elec-airflow ./etl
 
@@ -92,7 +122,7 @@ jobs:
   security-gate:
     name: "Security Gate"
     runs-on: ubuntu-latest
-    needs: [lint-python, lint-typescript, test-python, test-nextjs, docker-build]
+    needs: [lint-python, lint-typescript, test-python, test-crew, test-nextjs, docker-build]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     steps:
       - name: Security gate check
@@ -104,6 +134,7 @@ jobs:
           echo "  lint-python:    ${{ needs.lint-python.result }}"
           echo "  lint-typescript: ${{ needs.lint-typescript.result }}"
           echo "  test-python:    ${{ needs.test-python.result }}"
+          echo "  test-crew:      ${{ needs.test-crew.result }}"
           echo "  test-nextjs:    ${{ needs.test-nextjs.result }}"
           echo "  docker-build:   ${{ needs.docker-build.result }}"
           echo ""

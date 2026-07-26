@@ -87,3 +87,88 @@ Top feature by XGBoost gain: `service_category_encoded`, well ahead of `month`/`
 ### Lessons learned
 
 Same theme as both prior entries: the parts of this that were hardest to get right were never the ML — they were the seams between systems written independently (main.py vs train_model.py's duplicated encoding maps, ETL package boundaries, a test harness that didn't fully replicate a real process's import context). None of that shows up in a training log that says "R² = 0.51, done." Verification has to include *loading the artifact the way the running system actually loads it*, not just confirming the training script exits zero.
+
+---
+
+## CrewAI Multi-Agent Triage (`services/crew`) — 2026-07-25
+
+### What was built
+
+A fourth service running the same triage as three collaborating CrewAI agents rather than three
+sequential function calls, **alongside** the existing endpoints rather than replacing them.
+
+- `services/crew/` — `tools.py` (three `@tool`s wrapping `/triage/classify`,
+  `/triage/estimate-cost`, `/dispatch/recommend` over HTTP with `X-API-Key`), `agents.py`,
+  `tasks.py` (chained via CrewAI `context=[...]`), `crew.py`, `main.py` (FastAPI :8005).
+- `benchmark.py` — runs identical inquiries down both paths, recording latency, LLM calls,
+  tokens, and whether the crew's narrated cost matched the model's actual output.
+- Isolated `test-crew` CI job, crew image added to `docker-build` and the Trivy scan matrix.
+- `docs/crewai-integration.md`.
+
+### Key decisions
+
+**Separate service, not `services/triage/crew/`.** Two hard blockers made the in-place version
+the wrong call. First, `services/triage/main.py` builds its app, applies middleware, connects the
+DB and calls `load_model()` at *import* time — a `crew/` package importing its helpers is a
+circular import, so it would have forced a `core/` refactor of a working service just to add a
+feature. Second, `ci.yml`'s `test-python` job installs all services' requirements into **one**
+interpreter, so CrewAI's litellm/instructor tree would have had to reconcile with triage's
+`numpy<2.5` pin (required by `shap`'s numba) in CI even though the containers are isolated. The
+separate service dodges both, at the cost of one network hop per tool call — which the benchmark
+measures rather than hides.
+
+**Alongside, not replacing.** Keeping the sequential path gives a baseline to benchmark against,
+and means a Groq outage degrades one path instead of taking triage down. The crew is slower and
+more expensive per inquiry; presenting it as a straight upgrade would have been dishonest.
+
+**Delegation disabled.** With `allow_delegation=True` an agent that struggles can hand its task
+to another — which would let the classifier produce cost estimates without ever calling the
+XGBoost tool. The deterministic work has to stay deterministic.
+
+**`def`, not `async def`, for `/crew/process`.** `crew.kickoff()` blocks; FastAPI runs plain
+`def` handlers in a threadpool. Every existing triage endpoint is `async def` while doing
+entirely synchronous I/O — already blocking the event loop. Worth not copying.
+
+### Two things worth keeping
+
+**Inter-agent sanitisation.** The existing services sanitise input once at the HTTP boundary.
+That is insufficient for a crew: Task 1's *output* becomes Task 2's *prompt*, so a payload that
+survives classification is injected into the next agent's context without ever crossing the
+boundary again. A `task_callback` now re-runs `sanitize_prompt_input()` on every task output and
+logs when it changed something. It mutates `TaskOutput.raw` **in place** — returning a cleaned
+copy would leave the downstream agent reading the original, which is subtle enough to warrant its
+own test.
+
+**The determinism guard.** `/triage/estimate-cost` returns an exact XGBoost figure; an agent that
+narrates it can round R11,280.65 to "about R11,000". Tools now stash their untouched responses in
+thread-local storage (thread-local, not a module global, because kickoff runs in FastAPI's
+threadpool and concurrent requests would read each other's results), and after kickoff the
+service compares the crew's reported cost against ground truth. On disagreement the tool's value
+wins, `cost_estimate_overridden` is set, and a `SecurityLogger` event fires — turning an
+invisible hallucination into a counted metric.
+
+### Challenges
+
+**CrewAI 1.15.6 requires Python <3.14; the dev box runs 3.14.** `pip install crewai` there
+silently resolves to **0.11.2** — a 2024-era API with a completely different surface. The
+containers are `python:3.12-slim`, so this only bites local work. I wrote the integration against
+the real 1.x API by extracting the wheel and reading `crewai/__init__.py`, `crew.py`, `task.py`
+and `tools/base_tool.py` directly, rather than from memory. Local verification is genuinely
+impossible; container/CI verification is the only honest check.
+
+**The shared `security` package required sqlalchemy to emit a log line.**
+`security/logging/security_logger.py` imported `create_engine` and `text` at module scope, but
+every service constructs `SecurityLogger(engine=None)` and only ever logs to stdout — the
+database path is unreachable without an engine. That made the shared package unusable by any
+service without a database, which the crew is. Moved the import into `_persist_to_db()`;
+`create_engine` turned out to be imported and never used at all. Regression-tested dispatch and
+loadshedding afterwards.
+
+### Lessons learned
+
+The interesting failure mode with agents is not that they break — it is that they *succeed
+plausibly*. A crew that returns "approximately R11,000" for a job the model priced at R11,280.65
+looks entirely correct in a demo and is wrong in a way no exception surfaces. Wrapping
+deterministic components in an LLM means the determinism is now a claim you have to actively
+verify, not a property you still get for free. That is the whole reason the guard and the
+benchmark exist rather than just the crew.

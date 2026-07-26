@@ -134,6 +134,37 @@ services:
     restart: unless-stopped
 
   # =============================================================================
+  # FastAPI — CrewAI Multi-Agent Triage
+  # =============================================================================
+  # Runs ALONGSIDE the sequential triage path rather than replacing it — its
+  # agent tools call triage and dispatch over HTTP, so both must be healthy
+  # before it starts. See docs/crewai-integration.md.
+  crew:
+    build:
+      context: .
+      dockerfile: services/crew/Dockerfile
+    container_name: rams-elec-crew
+    env_file: .env
+    ports:
+      - "8005:8005"
+    environment:
+      - CREW_PORT=8005
+      - TRIAGE_SERVICE_URL=http://triage:8001
+      - DISPATCH_SERVICE_URL=http://dispatch:8004
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-rams-elec-frontend-2026}
+    depends_on:
+      triage:
+        condition: service_healthy
+      dispatch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/crew/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # =============================================================================
   # Next.js Frontend
   # =============================================================================
   web:
