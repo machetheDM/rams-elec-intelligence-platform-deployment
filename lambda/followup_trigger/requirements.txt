@@ -1,0 +1,10 @@
+# Pure-Python only, deliberately. Both of these install as plain .py files, so
+# `pip install -t` on Windows or macOS produces a zip that runs on Amazon Linux.
+# psycopg2 would not: its compiled extension has to match the Lambda runtime's
+# platform, which is the usual reason this kind of function ends up needing a
+# container image or a prebuilt layer for one query a day.
+#
+# boto3 is NOT listed — it is already present in the Lambda Python runtime, and
+# bundling it would add ~10 MB to the zip for no gain.
+SQLAlchemy==2.0.36
+pg8000==1.31.2

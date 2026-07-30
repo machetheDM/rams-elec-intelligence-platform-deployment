@@ -16,8 +16,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install flake8 black
-      - run: flake8 services/ etl/ --count --select=E9,F63,F7,F82 --show-source --statistics
-      - run: black --check services/ etl/ --diff
+      # lambda/ is included; security/ still is not — 7 files there have never
+      # been black-formatted and widening the scope would fail on untouched code.
+      - run: flake8 services/ etl/ lambda/ --count --select=E9,F63,F7,F82 --show-source --statistics
+      - run: black --check services/ etl/ lambda/ --diff
 
   lint-typescript:
     name: Lint TypeScript (ESLint)

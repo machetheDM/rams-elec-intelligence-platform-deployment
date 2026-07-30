@@ -243,3 +243,18 @@ variable "budget_start_date" {
     error_message = "budget_start_date must match YYYY-MM-DD_HH:MM."
   }
 }
+
+# ── Module 11 Phase 1: follow-up Lambda ────────────────────────────────
+
+# NOTE: `log_retention_days` is declared once, above, and is shared by both
+# Lambdas. This branch originally carried a second declaration with the full
+# CloudWatch value set and a 30-day default; it was dropped rather than merged.
+# The surviving version caps the allowed values at 90 days on purpose — an
+# unbounded retention list is a slow cost leak on a project with a $5/month
+# ceiling, and that constraint is worth more here than the extra options.
+
+variable "schedule_timezone" {
+  description = "IANA timezone for the daily follow-up schedule. The DAG this replaces ran at 09:00 local — a civil hour to message a customer — so the schedule is expressed in local time rather than a UTC offset."
+  type        = string
+  default     = "Africa/Johannesburg"
+}
