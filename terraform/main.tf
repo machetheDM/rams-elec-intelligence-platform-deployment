@@ -4,11 +4,15 @@
 # Secure cloud deployment architecture on Microsoft Azure.
 #
 # IMPORTANT: These Terraform configurations document the intended secure
-# deployment architecture. Apply in a development environment with
-# appropriate Azure credentials. This is an academic project — not
-# provisioned in production.
+# deployment architecture. This is an academic project — it has never been
+# applied, and no Azure resource described here has ever existed.
 #
-# Prerequisites:
+# CI type-checks this module (`terraform fmt -check`, `init -backend=false`,
+# `validate`) so the HCL is known-correct against the azurerm provider schema.
+# That is a statement about the code, NOT about deployment. Nothing is
+# provisioned. See README.md.
+#
+# Prerequisites, if it were ever applied:
 #   1. Azure CLI: az login
 #   2. Terraform:  terraform init
 #   3. Review variables in variables.tf
@@ -24,10 +28,6 @@ terraform {
     azurerm = {
       source  = "hashicorp/azurerm"
       version = "~> 4.0"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
     }
   }
 
@@ -255,7 +255,7 @@ resource "azurerm_key_vault" "main" {
   sku_name                   = "standard"
   soft_delete_retention_days = 90
   purge_protection_enabled   = true
-  enable_rbac_authorization  = true
+  rbac_authorization_enabled = true
 
   network_acls {
     default_action = "Deny"
@@ -274,11 +274,36 @@ resource "azurerm_log_analytics_workspace" "main" {
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   sku                 = "PerGB2018"
-  retention_in_days   = 90
+
+  # Retention lives here, not on the diagnostic settings in security.tf.
+  # azurerm 4.0 removed the per-setting `retention_policy` block, so the
+  # workspace retention is what backs the 90-day POPIA claim in README.md.
+  retention_in_days = 90
 
   tags = {
     Environment = var.environment
   }
+}
+
+# ── Private DNS Zone (PostgreSQL) ──────────────────────────────────────
+# azurerm rejects `delegated_subnet_id` without `private_dns_zone_id` — the two
+# are a pair, not independent options. The zone name MUST end in
+# `.postgres.database.azure.com` or the service refuses it.
+
+resource "azurerm_private_dns_zone" "postgres" {
+  name                = "rams-elec-${var.environment}.postgres.database.azure.com"
+  resource_group_name = azurerm_resource_group.main.name
+
+  tags = {
+    Environment = var.environment
+  }
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "postgres" {
+  name                  = "postgres-dns-link"
+  private_dns_zone_name = azurerm_private_dns_zone.postgres.name
+  resource_group_name   = azurerm_resource_group.main.name
+  virtual_network_id    = azurerm_virtual_network.main.id
 }
 
 # ── PostgreSQL Flexible Server ─────────────────────────────────────────
@@ -288,35 +313,36 @@ resource "azurerm_postgresql_flexible_server" "main" {
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
 
-  administrator_login    = var.db_admin_username
-  administrator_password = random_password.db_admin.result
-
   sku_name   = "B_Standard_B1ms"
   version    = "15"
   storage_mb = 32768
 
+  # Entra ID only — deliberately no `administrator_login`/`administrator_password`.
+  # The provider requires `password_auth_enabled = true` before it will accept an
+  # administrator_login at all, so setting one here while disabling password auth
+  # (as this file previously did) can never apply. `tenant_id` is required
+  # whenever active_directory_auth_enabled is true.
+  #
+  # The AAD administrator is a real directory principal, so it is granted
+  # out-of-band rather than hardcoded: this module invents no object IDs.
   authentication {
     active_directory_auth_enabled = true
     password_auth_enabled         = false
+    tenant_id                     = data.azurerm_client_config.current.tenant_id
   }
 
-  delegated_zone_id = azurerm_subnet.data.id
+  # Public access must be off once the server is on a delegated subnet.
+  delegated_subnet_id           = azurerm_subnet.data.id
+  private_dns_zone_id           = azurerm_private_dns_zone.postgres.id
+  public_network_access_enabled = false
+
+  # The zone link must exist before the server, or the service cannot register
+  # the server's DNS record.
+  depends_on = [azurerm_private_dns_zone_virtual_network_link.postgres]
 
   tags = {
     Environment = var.environment
   }
-}
-
-resource "random_password" "db_admin" {
-  length  = 32
-  special = true
-}
-
-# Store DB password in Key Vault
-resource "azurerm_key_vault_secret" "db_password" {
-  name         = "postgresql-admin-password"
-  value        = random_password.db_admin.result
-  key_vault_id = azurerm_key_vault.main.id
 }
 
 # ── Data Sources ───────────────────────────────────────────────────────

@@ -154,6 +154,27 @@ default — a Lambda in one region reading SSM in another fails at cold start.
 - Fonts via `next/font` — **never** hand-write `<head>` in App Router (React 19 hoists `<link>`
   and breaks hydration).
 
+**Terraform (Azure root, `terraform/*.tf`)** — designed, never provisioned (ECCU524), but CI now
+type-checks it (`terraform-azure` job). Provider is `azurerm ~> 4.0` with no committed lock file,
+so it resolves the newest 4.x on every run. azurerm 4.x traps that were actually hit here:
+- `azurerm_monitor_diagnostic_setting`: the `log` and `metric` blocks and the nested
+  `retention_policy` block were **removed in 4.0**. Use `enabled_log` / `enabled_metric`, and set
+  retention on the Log Analytics workspace instead — that is what backs the 90-day POPIA claim.
+- `azurerm_postgresql_flexible_server`: `delegated_subnet_id` and `private_dns_zone_id` are a
+  **pair** — the provider rejects one without the other, and `public_network_access_enabled` must
+  then be `false`. The DNS zone name must end `.postgres.database.azure.com`.
+- Same resource: `password_auth_enabled = false` **forbids** `administrator_login`, and
+  `active_directory_auth_enabled = true` **requires** `authentication.tenant_id`. The old config
+  set a login while disabling password auth, so it could never have applied.
+- `azurerm_security_center_setting.setting_name` is case-sensitive: `Sentinel`, not `SENTINEL`.
+- `azurerm_web_application_firewall_policy` rate limiting uses `rate_limit_duration`, an enum
+  (`OneMin` | `FiveMins`) — there is no `..._in_min` numeric argument.
+- Key Vault's `enable_rbac_authorization` is deprecated for `rbac_authorization_enabled` (removed
+  in provider v5).
+`validate` is offline and needs no credentials, but it only type-checks — it cannot tell you the
+config would apply. Do not let "CI validates the Azure module" drift into "the Azure module was
+deployed."
+
 **Airflow** — DAGs go in `etl/dags/`, NOT `airflow/dags/`. `docker/Dockerfile.airflow` builds
 with context `./etl` and bakes `COPY dags/`; anything in `airflow/dags/` is never deployed.
 Use `schedule_interval` (not `schedule`), `PythonOperator` (no TaskFlow anywhere), SQLAlchemy
@@ -169,7 +190,8 @@ directories in both places or they silently never run in CI.
 **CI** — `ci.yml` installs *all* service requirements into ONE env, so a heavy dependency
 collides across services. That is why CrewAI has its own isolated `test-crew` job (it conflicts
 with triage's `numpy<2.5`, required by shap's numba). `terraform-aws` validates
-`terraform/aws/` only, with `init -backend=false` — no credentials, no AWS contact.
+`terraform/aws/` only; `terraform-azure` validates `terraform/*.tf` (the Azure root) — both
+use `init -backend=false`, no credentials, no cloud contact, nothing provisioned.
 Both workflows trigger on push to `main` **and** on PRs targeting `main` — so open a PR to
 get verification.
 
@@ -206,6 +228,9 @@ cd packages/db && npx prisma validate
 
 # Stack
 docker compose config && docker compose up -d
+
+# Terraform (Azure root) — offline, no credentials, provisions nothing
+cd terraform && terraform fmt -check -recursive && terraform init -backend=false && terraform validate
 ```
 
 **Local env note:** dev machine has **two** Pythons and the wrong one is on PATH.
@@ -216,8 +241,8 @@ a broken test. Always `py -3.14 -m pytest`.
 
 Containers are 3.12. CrewAI needs <3.14, so verify crew in Docker, not locally — its tests
 skip on 3.14 (expect `34 passed, 4 skipped`, ~4 min, mostly shap/xgboost import time).
-`terraform` is **not installed locally** — `fmt -check` and `validate` run only in CI, and
-only against `terraform/aws/`.
+`terraform` is **not installed locally** — `fmt -check` and `validate` run only in CI
+(both `terraform/aws/` and `terraform/`). Terraform changes need a PR to get verified.
 Note `black --check` in CI covers `services/ etl/` **only** — `security/` has never been
 black-formatted and 7 files there would be reformatted if the scope were widened. Port 5432
 is often taken by another project's `community-ride-db` — our postgres then fails to bind.
@@ -274,6 +299,11 @@ out of band with `aws ssm put-parameter --type SecureString`, before the first a
 - **Dependabot security updates are disabled** — enable in Settings → Code security.
 - **v0.dev credits (~$4)** unspent; `HeroSection` and `SecurityTrustSection` untouched by v0.
 - Scratch files (`create_project.graphql`, `proj_id.txt`, `project_columns.json`) now gitignored.
+
+**Closed by PR #16 (Azure-validate):** `terraform/*.tf` now passes `fmt -check` and `validate` in
+CI (`terraform-azure` job). Five real errors were fixed — see the Terraform conventions section
+above for the azurerm 4.x specifics, and `docs/build-journal.md` for the record. Still never
+provisioned.
 
 **Assistant permissions:** PR *merging* is blocked by the safety classifier (the user runs it);
 PR *creation*, pushing and committing are fine. Never handle AWS keys or any credential.

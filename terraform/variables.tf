@@ -61,13 +61,10 @@ variable "management_subnet_prefix" {
 }
 
 # ── Database ───────────────────────────────────────────────────────────
-
-variable "db_admin_username" {
-  description = "PostgreSQL admin username"
-  type        = string
-  default     = "rams_elec_admin"
-  sensitive   = true
-}
+# No db_admin_username / password variable by design. The PostgreSQL Flexible
+# Server authenticates via Entra ID only (main.tf), and the provider refuses an
+# `administrator_login` unless password auth is enabled. There is no password to
+# name, generate, or store.
 
 # ── Tags ───────────────────────────────────────────────────────────────
 

@@ -34,6 +34,34 @@ These Terraform configurations document the **intended secure cloud deployment a
 
 ---
 
+## Validated ≠ deployed
+
+CI runs `terraform fmt -check -recursive`, `terraform init -backend=false`, and
+`terraform validate` against this directory on every PR (the `terraform-azure` job in
+`.github/workflows/ci.yml`).
+
+Be precise about what that does and does not establish:
+
+| Claim | True? |
+|---|---|
+| The HCL parses and type-checks against the azurerm 4.x provider schema | **Yes** — CI proves it |
+| Every argument name and enum value exists in the provider | **Yes** — that is what `validate` checks |
+| The architecture would apply cleanly against a real subscription | **No** — never attempted |
+| Any resource described here has ever existed | **No** |
+
+`validate` is offline and credential-free: `-backend=false` skips backend
+initialisation, and validation type-checks against the downloaded provider schema
+without contacting Azure. It cannot detect quota limits, name collisions on globally
+unique resources, region SKU availability, or RBAC gaps — only `plan` against a real
+subscription would, and that has not been run.
+
+Before this job existed the module had never been checked by any tool, and it did not
+type-check. Five real errors were found and fixed (see `docs/build-journal.md`),
+including one — `delegated_zone_id`, which is not an azurerm argument at all — that
+would have failed immediately on any `plan`.
+
+---
+
 ## Architecture Summary
 
 ```
@@ -53,14 +81,29 @@ Identity: Entra ID + Managed Identities (no hardcoded credentials)
 
 | File | Purpose |
 |------|---------|
-| `main.tf` | Resource group, VNet, subnets, NSGs, Key Vault, Log Analytics, PostgreSQL |
-| `variables.tf` | All configurable values (no hardcoded secrets) |
+| `main.tf` | Resource group, VNet, subnets, NSGs, Key Vault, Log Analytics, private DNS zone, PostgreSQL |
+| `variables.tf` | All configurable values (no hardcoded secrets, and no DB credential vars at all) |
 | `outputs.tf` | Key resource IDs and endpoints |
 | `security.tf` | WAF policy, Defender for Cloud, Sentinel, diagnostic settings |
 
 ---
 
+## How to Check It (no credentials, nothing provisioned)
+
+This is what CI does, and the only part of this README that has actually been run:
+
+```bash
+cd terraform
+terraform fmt -check -recursive
+terraform init -backend=false
+terraform validate
+```
+
+---
+
 ## How to Apply (Development Only)
+
+**Never been run.** Everything below is the intended procedure, not a record of one.
 
 ```bash
 # 1. Login to Azure
@@ -85,7 +128,7 @@ terraform destroy
 
 | Decision | Rationale | Reference |
 |----------|-----------|-----------|
-| Managed Identity (not passwords) | No credential rotation needed; Azure handles lifecycle | NIST SP 800-53 IA-5 |
+| Entra ID auth only, no DB password | Nothing to rotate or leak; `password_auth_enabled = false` and no `administrator_login` is set | NIST SP 800-53 IA-5 |
 | Private Endpoints for all PaaS | Traffic never leaves Microsoft backbone | CIS Azure 3.1 |
 | WAF Prevention mode (not Detection) | Block attacks, don't just log them | OWASP ASVS V1.1 |
 | Key Vault with RBAC | Fine-grained access control; audit every access | NIST SP 800-53 AC-6 |
