@@ -56,9 +56,11 @@ unique resources, region SKU availability, or RBAC gaps — only `plan` against 
 subscription would, and that has not been run.
 
 Before this job existed the module had never been checked by any tool, and it did not
-type-check. Five real errors were found and fixed (see `docs/build-journal.md`),
-including one — `delegated_zone_id`, which is not an azurerm argument at all — that
-would have failed immediately on any `plan`.
+type-check. Seven issues were found and fixed: four hard `validate` errors, one
+deprecation, and two contradictions that `validate` cannot catch because the provider
+enforces them at apply time. See `docs/build-journal.md` for the list. One of them —
+`delegated_zone_id`, which is not an azurerm argument at all — would have failed
+immediately on any `plan`.
 
 ---
 

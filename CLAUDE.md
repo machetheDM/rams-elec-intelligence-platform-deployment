@@ -175,6 +175,14 @@ so it resolves the newest 4.x on every run. azurerm 4.x traps that were actually
 config would apply. Do not let "CI validates the Azure module" drift into "the Azure module was
 deployed."
 
+Since `terraform` is not installed locally, a Terraform change costs a CI round trip per mistake.
+Cheap way to cut that to one: parse the files with `python-hcl2` (catches syntax), then grep every
+argument name used against the provider's own docs, which are plain markdown at
+`raw.githubusercontent.com/hashicorp/terraform-provider-azurerm/v<VERSION>/website/docs/r/<resource>.html.markdown`
+— pin `<VERSION>` to what `~> 4.0` actually resolves to (check the GitHub releases API), not `main`,
+which is already documenting v5. That caught all seven issues before the first push.
+`terraform fmt -check` does tolerate this repo's CRLF `.tf` files — verified, not assumed.
+
 **Airflow** — DAGs go in `etl/dags/`, NOT `airflow/dags/`. `docker/Dockerfile.airflow` builds
 with context `./etl` and bakes `COPY dags/`; anything in `airflow/dags/` is never deployed.
 Use `schedule_interval` (not `schedule`), `PythonOperator` (no TaskFlow anywhere), SQLAlchemy
@@ -301,9 +309,9 @@ out of band with `aws ssm put-parameter --type SecureString`, before the first a
 - Scratch files (`create_project.graphql`, `proj_id.txt`, `project_columns.json`) now gitignored.
 
 **Closed by PR #16 (Azure-validate):** `terraform/*.tf` now passes `fmt -check` and `validate` in
-CI (`terraform-azure` job). Five real errors were fixed — see the Terraform conventions section
-above for the azurerm 4.x specifics, and `docs/build-journal.md` for the record. Still never
-provisioned.
+CI (`terraform-azure` job). Seven issues fixed — four hard `validate` errors, one deprecation, two
+apply-time contradictions `validate` cannot catch. See the Terraform conventions section above for
+the azurerm 4.x specifics, and `docs/build-journal.md` for the record. Still never provisioned.
 
 **Assistant permissions:** PR *merging* is blocked by the safety classifier (the user runs it);
 PR *creation*, pushing and committing are fine. Never handle AWS keys or any credential.
