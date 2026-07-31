@@ -497,3 +497,78 @@ reasoning sits in `lambda.tf` next to the resource rather than only here.
 
 Nothing has been provisioned. No AWS account has been touched. The Terraform is written and CI
 validates it; the first `terraform apply` has not been run.
+
+---
+
+## The Dependency Review job was never a check — 2026-07-31
+
+`Dependency Review` had failed on every pull request since the day it was added. It was
+diagnosed early as a repository setting rather than a code problem, written into CLAUDE.md
+as such, and thereafter mentioned in every CI summary as "the known pre-existing failure."
+That diagnosis was correct. The conclusion drawn from it was not.
+
+The failure took about six seconds and said:
+
+```
+Dependency review is not supported on this repository.
+Please ensure that Dependency graph is enabled
+```
+
+It had never evaluated a single dependency.
+
+### What changed
+
+Enabling **Settings → Code security → Dependency graph** took one click. The next run failed
+again — but differently:
+
+```
+Dependency review detected vulnerable packages.
+lambda/followup_trigger/requirements.txt » pg8000@1.31.2
+  – pg8000 SQL injection vulnerability via a specially crafted Python list input (high)
+```
+
+That is CVE-2025-61385 / GHSA-wq2g-r956-j8cc: a SQL injection affecting `pg8000 <= 1.31.4`,
+first patched in 1.31.5. The pin had been added two days earlier, in the follow-up Lambda —
+a function whose entire job is running SQL against the customer database.
+
+### Assessing it honestly rather than just bumping it
+
+The vulnerable path is reached by passing a Python **list** as a bound query parameter. Every
+parameter this handler binds is a scalar: `urgent_days` and `standard_days` are module
+constants, and `job_id` / `customer_id` / `equipment_id` / `days` are values read back out of
+the database. No list is ever passed, so the vulnerability is not reachable in this code as
+written.
+
+It was bumped anyway. The cost is one digit, and the alternative is leaving a known
+high-severity advisory in a security-coursework repository on the theory that nobody will
+later add a list-valued parameter. 1.31.5 is still a `py3-none-any` wheel, so the pure-Python
+constraint that made pg8000 preferable to psycopg2 for cross-platform Lambda packaging is
+unchanged — checked, not assumed, because that constraint is the whole reason the driver was
+chosen.
+
+After the bump: `Dependency review did not detect any vulnerable packages with severity level
+"high" or higher.` First fully green run on this repository.
+
+### Lessons learned
+
+**This is the fourth instance of the silent no-op, and the first that hid something real.**
+The earlier three were a query matching zero rows, an UPDATE ignoring `rowcount`, and a
+healthcheck binary that did not exist. All three reported success while doing nothing. This
+one reported *failure* while doing nothing — which is the same defect wearing the opposite
+mask, and considerably better camouflaged, because a red check looks like it is working.
+
+**A permanently failing check is indistinguishable from a working one that found something.**
+That is the actual lesson. Once a job fails every single time, its signal is gone: the only
+way to tell a config error from a genuine finding is to read the log every time, which nobody
+does past the second week. The job had degraded from a security control into decoration, and
+the degradation was invisible precisely because it looked like vigilance.
+
+**"Known issue" is a decision, not an observation.** Writing "pre-existing, repo setting, not
+code" into CLAUDE.md was accurate and it was also the moment the job stopped being fixed. The
+note explained the red X well enough that nobody needed to look again. Documenting why
+something is broken is not a substitute for fixing it, and on a ten-second fix it is strictly
+worse — the note cost more effort than the toggle.
+
+**Fix it or delete it.** A check nobody can act on should not be in the pipeline. Either
+outcome would have been better than the one we had; the one thing that must not happen is
+learning to read past a red mark.
