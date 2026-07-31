@@ -7,4 +7,16 @@
 # boto3 is NOT listed — it is already present in the Lambda Python runtime, and
 # bundling it would add ~10 MB to the zip for no gain.
 SQLAlchemy==2.0.36
-pg8000==1.31.2
+
+# 1.31.5 is the floor, not a preference: CVE-2025-61385 (GHSA-wq2g-r956-j8cc,
+# high) is a SQL injection in pg8000 <= 1.31.4 reachable by passing a specially
+# crafted Python *list* as a query parameter. Every parameter this handler binds
+# is a scalar — ints from module constants, strings from the database — so the
+# vulnerable path is not reachable here today. The pin moved anyway: the cost is
+# one digit, and the next person to add a list-valued parameter should not have
+# to know this advisory exists.
+#
+# Found by the Dependency Review job, on its first run after Dependency graph
+# was enabled on the repo. It had been failing closed on a config error until
+# then, so this is the first dependency finding CI has ever actually produced.
+pg8000==1.31.5
