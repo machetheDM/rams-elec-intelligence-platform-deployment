@@ -2,11 +2,21 @@
 
 [![CI Pipeline](https://github.com/machetheDM/rams-elec-intelligence-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/machetheDM/rams-elec-intelligence-platform/actions/workflows/ci.yml)
 
-> 🚧 **In Active Development** — This project is being built as a portfolio demonstration of full-stack AI engineering skills. See [Module Progress](#module-progress) below.
+### Replacing a small business's "AI-powered" marketing claim with a system that actually is one — automated enquiry triage, instant cost estimates and a retrieval-backed chatbot. A paid client engagement, built in the open.
 
-**AI-powered upgrade for [ramsatelec.com](https://ramsatelec.com)** — a South African electrical and refrigeration services company operating across Gauteng and Limpopo.
+**Client:** [ramsatelec.com](https://ramsatelec.com) — a South African electrical and refrigeration company operating across Gauteng and Limpopo.
 
-Replaces a static brochure site with a functional, AI-driven business platform delivering measurable value: faster lead conversion, automated client communication, and data-driven operations.
+> 🚧 **Status: in active development, not yet deployed.** Cutover to a `.co.za` domain is planned. The cloud infrastructure is written and reviewed but deliberately **not provisioned** — see [Module Progress](#module-progress). This repository separates *designed* from *deployed* throughout, and says so where it matters.
+
+---
+
+## 📸 Screenshots
+
+> 📸 **Screenshots coming soon** — the enquiry-triage flow returning a cost estimate, and the load-shedding widget pulling live EskomSePush data.
+
+---
+
+Replaces a static brochure site with a functional, AI-driven business platform: faster lead conversion, automated client communication, and data-driven operations.
 
 ---
 
