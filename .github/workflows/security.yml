@@ -435,8 +435,16 @@ jobs:
           # scan report is not much of one.
           #
           # So the date is computed here and substituted after the file is
-          # written, leaving the heredoc quoted. (${{ ... }} is unaffected either
-          # way — GitHub Actions expands those before the shell ever runs.)
+          # written, leaving the heredoc quoted. Actions template expressions in
+          # the body are unaffected either way, because GitHub expands those
+          # before the shell ever runs.
+          #
+          # DO NOT write a literal Actions expression anywhere in this block,
+          # including in a comment. GitHub substitutes them across the whole
+          # `run:` string before any shell exists to treat '#' as a comment, so
+          # an illustrative one is still parsed — and an invalid one fails the
+          # entire workflow with "Invalid workflow file", not the step. That is
+          # exactly how this comment broke the file on its first commit.
           DATE_UTC="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
           cat > reports/security_summary.md << 'EOF'
