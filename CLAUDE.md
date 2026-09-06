@@ -259,11 +259,19 @@ is often taken by another project's `community-ride-db` — our postgres then fa
 
 ## State as of 2026-09-06
 
-**On `main` (`59547aa`).** All PRs merged (#14 closed as superseded, #15–#17 squash-merged).
+**On `main`.** All PRs merged (#14 closed as superseded, #15–#17 squash-merged).
 main now includes everything: security hardening, XGBoost quote estimator (**MAE R11,280.65 ·
 R² 0.5121 · CV MAE R10,393.38**, 108/27 split, synthetic data), the landing page, CrewAI crew,
-Module 10, AWS Vendor Upgrade Phases 0–3, follow-up Lambda + EventBridge, and the Azure
-Terraform validation fix. Zero open PRs.
+Module 10, AWS Vendor Upgrade Phases 0–3, follow-up Lambda + EventBridge, the Azure
+Terraform validation fix, and all frontend pages. Zero open PRs.
+
+**Frontend pages complete (23 routes, build passes):**
+- Public: `/` (landing), `/services`, `/inquire`, `/login`
+- Portal: `/dashboard`, `/equipment`, `/service-history`, `/compliance`, `/chatbot`
+- Admin: `/admin/jobs` (Kanban board)
+- API proxies: `/api/triage/*`, `/api/dispatch/*`, `/api/admin/jobs`, `/api/chatbot`,
+  `/api/model-metrics`, `/api/alerts/subscribe`, `/api/auth/[...nextauth]`
+- All browser→service calls now go through same-origin proxy routes (no `NEXT_PUBLIC_*` API keys).
 
 **AWS Vendor Upgrade (Phases 0–3) — now on `main`:**
 - **Phase 0** (S3 Gold Parquet + Glue Crawler/Catalog): `glue.tf`, `etl/loaders/s3_loader.py`.

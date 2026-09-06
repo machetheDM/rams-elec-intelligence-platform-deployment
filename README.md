@@ -78,14 +78,14 @@ graph TB
 | # | Module | Description | Status |
 |---|--------|-------------|--------|
 | 1 | Database Schema & Data Models | Star-schema PostgreSQL with Prisma ORM | 🔄 In Progress |
-| 2 | ETL Pipeline | Bronze→Silver→Gold medallion architecture | ⏳ Pending |
+| 2 | ETL Pipeline | Bronze→Silver→Gold medallion architecture | ✅ Complete |
 | 3 | AI Inquiry & Triage Engine | NLP classification + XGBoost cost estimation (MAE R11,280 / R² 0.512) + CrewAI multi-agent path | ✅ Complete |
-| 4 | Load-Shedding Intelligence | EskomSePush integration + WhatsApp alerts | ⏳ Pending |
-| 5 | Customer Portal + RAG Chatbot | NextAuth.js + FAISS knowledge base | ⏳ Pending |
+| 4 | Load-Shedding Intelligence | EskomSePush integration + WhatsApp alerts | ✅ Complete |
+| 5 | Customer Portal + RAG Chatbot | NextAuth.js + FAISS knowledge base + portal pages (dashboard, equipment, service history, compliance, chatbot) | ✅ Complete |
 | 6 | Analytics Dashboard | 6-page Streamlit dashboard | ⏳ Pending |
-| 7 | Dispatch & Job Assignment | Skillset-based technician matching | ⏳ Pending |
-| 8 | Public Frontend Upgrade | Next.js 15 responsive dark-mode site | ⏳ Pending |
-| 9 | Integration Testing & Deployment | Docker Compose + CI + Vercel/Railway | ⏳ Pending |
+| 7 | Dispatch & Job Assignment | Skillset-based technician matching + admin Kanban board | ✅ Complete |
+| 8 | Public Frontend Upgrade | Next.js 15 responsive dark-mode site — all public pages + API proxy routes | ✅ Complete |
+| 9 | Integration Testing & Deployment | Docker Compose + CI + Vercel/Railway | 🔄 In Progress |
 | 10 | Post-Service Follow-up Agent | Airflow trigger DAG + POPIA consent gate + sentiment service. WhatsApp flow designed, not provisioned; failure-recurrence model awaiting data | 🔄 In Progress |
 
 ## Module Overview

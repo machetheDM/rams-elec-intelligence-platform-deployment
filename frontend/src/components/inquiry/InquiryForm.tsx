@@ -116,7 +116,7 @@ export default function InquiryForm() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_TRIAGE_API_URL || "http://localhost:8001"}/triage/classify`, {
+      const res = await fetch("/api/triage/classify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -131,7 +131,7 @@ export default function InquiryForm() {
 
       const classification = await res.json();
 
-      const costRes = await fetch(`${process.env.NEXT_PUBLIC_TRIAGE_API_URL || "http://localhost:8001"}/triage/estimate-cost`, {
+      const costRes = await fetch("/api/triage/estimate-cost", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -146,7 +146,7 @@ export default function InquiryForm() {
 
       const costEstimate = await costRes.json();
 
-      const techRes = await fetch(`${process.env.NEXT_PUBLIC_TRIAGE_API_URL || "http://localhost:8001"}/triage/assign-technician`, {
+      const techRes = await fetch("/api/triage/assign-technician", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(classification),

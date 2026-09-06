@@ -64,7 +64,7 @@ export default function AdminJobBoard() {
     setRecLoading(true);
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_DISPATCH_API_URL || "http://localhost:8004"}/dispatch/recommend`,
+        "/api/dispatch/recommend",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -89,7 +89,7 @@ export default function AdminJobBoard() {
   const assignTechnician = async (jobId: string, technicianId: string) => {
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_DISPATCH_API_URL || "http://localhost:8004"}/dispatch/assign`,
+        "/api/dispatch/assign",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
