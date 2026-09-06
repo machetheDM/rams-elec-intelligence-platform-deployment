@@ -82,7 +82,7 @@ graph TB
 | 3 | AI Inquiry & Triage Engine | NLP classification + XGBoost cost estimation (MAE R11,280 / R² 0.512) + CrewAI multi-agent path | ✅ Complete |
 | 4 | Load-Shedding Intelligence | EskomSePush integration + WhatsApp alerts | ✅ Complete |
 | 5 | Customer Portal + RAG Chatbot | NextAuth.js + FAISS knowledge base + portal pages (dashboard, equipment, service history, compliance, chatbot) | ✅ Complete |
-| 6 | Analytics Dashboard | 6-page Streamlit dashboard | ⏳ Pending |
+| 6 | Analytics Dashboard | 6-page Recharts dashboard (Next.js) — business overview, inquiry analytics, revenue, equipment health, technician performance, load-shedding impact | ✅ Complete |
 | 7 | Dispatch & Job Assignment | Skillset-based technician matching + admin Kanban board | ✅ Complete |
 | 8 | Public Frontend Upgrade | Next.js 15 responsive dark-mode site — all public pages + API proxy routes | ✅ Complete |
 | 9 | Integration Testing & Deployment | Docker Compose (13 containers) + CI (11-job pipeline) + Vercel config + integration test script | ✅ Complete |

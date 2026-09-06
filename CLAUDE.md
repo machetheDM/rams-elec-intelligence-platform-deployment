@@ -265,13 +265,17 @@ R² 0.5121 · CV MAE R10,393.38**, 108/27 split, synthetic data), the landing pa
 Module 10, AWS Vendor Upgrade Phases 0–3, follow-up Lambda + EventBridge, the Azure
 Terraform validation fix, and all frontend pages. Zero open PRs.
 
-**Frontend pages complete (23 routes, build passes):**
+**Frontend complete (35 routes, build passes):**
 - Public: `/` (landing), `/services`, `/inquire`, `/login`
 - Portal: `/dashboard`, `/equipment`, `/service-history`, `/compliance`, `/chatbot`
-- Admin: `/admin/jobs` (Kanban board)
+- Admin: `/admin/jobs` (Kanban board), `/admin/analytics` (6-page Recharts dashboard)
+- Analytics pages: overview, inquiries, revenue, equipment, technicians, load-shedding impact
+- Analytics API routes query Prisma directly (`src/lib/db.ts` singleton)
 - API proxies: `/api/triage/*`, `/api/dispatch/*`, `/api/admin/jobs`, `/api/chatbot`,
   `/api/model-metrics`, `/api/alerts/subscribe`, `/api/auth/[...nextauth]`
 - All browser→service calls now go through same-origin proxy routes (no `NEXT_PUBLIC_*` API keys).
+- The Streamlit `dashboard/` directory is retained as reference but the production analytics
+  dashboard is the Next.js admin section (unified auth, design system, no extra container).
 
 **AWS Vendor Upgrade (Phases 0–3) — now on `main`:**
 - **Phase 0** (S3 Gold Parquet + Glue Crawler/Catalog): `glue.tf`, `etl/loaders/s3_loader.py`.
