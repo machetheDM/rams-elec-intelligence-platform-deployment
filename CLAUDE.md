@@ -37,7 +37,7 @@ referenced publicly on LinkedIn and shown to recruiters.
 2. **A DevSecOps/coursework overlay** — ECCU510 (Secure Programming) and ECCU524 (Cloud Security):
    security audit, hardening middleware, CI security pipeline, Azure Terraform, runbooks.
 
-**Careful — "Module" is overloaded.** Product modules 1–10 (README table) are NOT the same as
+**Careful — "Module" is overloaded.** Product modules 1–11 (README table) are NOT the same as
 SecureDevOps modules 1–5. Product Module 3 = AI Triage Engine; SecureDevOps Module 3 = CI/CD.
 
 ---
@@ -106,6 +106,44 @@ Concretely, things that have been deliberately *refused*:
   `ExceptionMiddleware` sits *inside* user middleware, so it surfaces as 500 not 401.
   Return `JSONResponse` directly.
 
+**API keys and `APP_ENV`** (`security/auth/api_key_middleware.py`)
+- Three keys are committed on purpose so `docker compose up` works with no setup:
+  `rams-elec-{frontend,airflow,n8n}-2026`. Their SHA-256 hashes are therefore public.
+- `APP_ENV` defaults to `development`, which accepts them (with a warning). **Any other
+  value** — including a typo or an empty string — requires `API_KEY_HASHES` and raises
+  `RuntimeError` *at import* without it. Unknown environment fails closed, never open.
+- Supplying a committed key's hash via `API_KEY_HASHES` also raises when `APP_ENV` is not
+  development. Moving a published key into an env var does not make it a secret.
+- `VALID_API_KEY_HASHES` resolves at import, so tests must `importlib.reload` and restore.
+  See `tests/test_api_key_env_gate.py` for the fixture pattern.
+
+**Lambda packaging** (`scripts/build_lambda.py` → `dist/sentiment-lambda.zip`)
+- The zip is **flat**: `main.py`, `lambda_handler.py`, and `security/` all at the root,
+  because Lambda puts `/var/task` on `sys.path`. Copying the repo tree breaks both imports.
+- Dev machine is Windows, Lambda is Linux — the build pins
+  `--platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all:` so a missing
+  Linux wheel fails the *build*, not the first invocation (`pydantic_core` is the one that
+  bites).
+- pip emits **Windows `.exe`** console-script launchers into `bin/` even under `--platform`,
+  and they are not reproducible. They are pruned, along with `*.dist-info/RECORD` which
+  records their hashes. Without that, `source_code_hash` changes on every rebuild and
+  Terraform shows a permanent diff.
+- `lambda_handler.py` imports `main` **at the bottom of the file, on purpose**:
+  `VALID_API_KEY_HASHES` resolves at import, so SSM config must be in `os.environ` first.
+  Moving that import up yields a Lambda that raises on every request.
+- boto3 is not vendored; the runtime provides it.
+
+**Terraform** — two root modules, no shared state, and `terraform` does not recurse.
+`terraform/*.tf` is **Azure, designed and never provisioned** (ECCU524). `terraform/aws/*.tf`
+is **Module 11, intended to actually run**. Do not blur these, and do not add AWS resources
+to the Azure root. `cd terraform/aws` first.
+
+**AWS region** — standardised on **`af-south-1`** (Cape Town). This is an opt-in region —
+enable it in the AWS console before the first apply. The hardcoded default in `variables.tf`,
+`.env.example`, all `boto3` clients (`os.getenv("AWS_REGION", "af-south-1")`), and
+`.github/workflows/sagemaker-train.yml` all agree. Do not introduce `eu-west-1` as a new
+default — a Lambda in one region reading SSM in another fails at cold start.
+
 **Frontend** — strict separation so UI can be redesigned (v0.dev) without touching logic.
 - `src/lib/api/*.ts` = data fetching, no React. `src/hooks/*.ts` = headless state, zero markup.
   `src/components/**` = presentation only.
@@ -121,14 +159,19 @@ with context `./etl` and bakes `COPY dags/`; anything in `airflow/dags/` is neve
 Use `schedule_interval` (not `schedule`), `PythonOperator` (no TaskFlow anywhere), SQLAlchemy
 `create_engine` + `text()`.
 
-**Testing** — `pytest.ini` sets `--import-mode=importlib`, `testpaths = services`. Each service has
-`test_health.py` loading `main.py` by explicit path (all share the basename). Standard tests:
-health reachable unauthenticated (200), main endpoint 401 without API key.
+**Testing** — `pytest.ini` sets `--import-mode=importlib`, `testpaths = services tests`. Each
+service has `test_health.py` loading `main.py` by explicit path (all share the basename).
+Standard tests: health reachable unauthenticated (200), main endpoint 401 without API key.
+Root `tests/` holds cross-cutting tests belonging to no single service (the shared `security/`
+middleware). `ci.yml` passes paths explicitly, which **overrides `testpaths`** — add new
+directories in both places or they silently never run in CI.
 
 **CI** — `ci.yml` installs *all* service requirements into ONE env, so a heavy dependency
 collides across services. That is why CrewAI has its own isolated `test-crew` job (it conflicts
-with triage's `numpy<2.5`, required by shap's numba). Both workflows trigger on push to `main`
-**and** on PRs targeting `main` — so open a PR to get verification.
+with triage's `numpy<2.5`, required by shap's numba). `terraform-aws` validates
+`terraform/aws/` only, with `init -backend=false` — no credentials, no AWS contact.
+Both workflows trigger on push to `main` **and** on PRs targeting `main` — so open a PR to
+get verification.
 
 ---
 
@@ -151,9 +194,9 @@ CSP forbade `unsafe-eval`, killing React Fast Refresh and therefore all hydratio
 ## Verification commands
 
 ```bash
-# Python
-python -m flake8 services/ etl/ --count --select=E9,F63,F7,F82 && python -m black --check services/ etl/
-pytest services/ -v
+# Python  — use `py -3.14`, NOT bare `python`/`pytest`. See the local env note below.
+py -3.14 -m flake8 services/ etl/ --count --select=E9,F63,F7,F82 && py -3.14 -m black --check services/ etl/
+py -3.14 -m pytest services/ tests/ -v
 
 # Frontend  (NEVER run `npm run build` while `next dev` is running — both write .next/ and it corrupts)
 cd frontend && npx tsc --noEmit && npx eslint . --max-warnings 0 && npm run build
@@ -165,33 +208,72 @@ cd packages/db && npx prisma validate
 docker compose config && docker compose up -d
 ```
 
-**Local env note:** dev machine runs Python 3.14; containers are 3.12. CrewAI needs <3.14, so
-verify crew in Docker, not locally. Port 5432 is often taken by another project's
-`community-ride-db` — our postgres then fails to bind.
+**Local env note:** dev machine has **two** Pythons and the wrong one is on PATH.
+`py -3.14` holds the app dependencies (fastapi, jwt, groq, sklearn) — but bare `pytest.exe`
+resolves to **3.13**, which has pytest and nothing else, so every service test dies at
+`ModuleNotFoundError: No module named 'jwt'` during collection. That is a PATH artifact, not
+a broken test. Always `py -3.14 -m pytest`.
+
+Containers are 3.12. CrewAI needs <3.14, so verify crew in Docker, not locally — its tests
+skip on 3.14 (expect `34 passed, 4 skipped`, ~4 min, mostly shap/xgboost import time).
+`terraform` is **not installed locally** — `fmt -check` and `validate` run only in CI, and
+only against `terraform/aws/`.
+Note `black --check` in CI covers `services/ etl/` **only** — `security/` has never been
+black-formatted and 7 files there would be reformatted if the scope were widened. Port 5432
+is often taken by another project's `community-ride-db` — our postgres then fails to bind.
 
 ---
 
-## State as of 2026-07-26
+## State as of 2026-09-06
 
-**On `main` (`8087630`):** structural fixes, security hardening across all services, XGBoost quote
-estimator (**MAE R11,280.65 · R² 0.5121 · CV MAE R10,393.38**, 108/27 split, synthetic data), the
-landing page, CrewAI crew (PR #12), and Module 10 + testimonials + alert signup + the Docker
-healthcheck fix (PR #13). CI green on both pipelines.
+**On `main` (`8087630`, unchanged since 2026-07-26):** structural fixes, security hardening
+across all services, XGBoost quote estimator (**MAE R11,280.65 · R² 0.5121 · CV MAE
+R10,393.38**, 108/27 split, synthetic data), the landing page, CrewAI crew (PR #12), and
+Module 10 + testimonials + alert signup + the Docker healthcheck fix (PR #13). CI green on
+both pipelines.
 
-**Open:**
+**Four open PRs (#14–#17), none merged. All rebased and conflict-free.**
+Merge order: **#15 → #17 → #16 → close #14** (its commit is already in #15).
+All CI checks pass on every PR (only Dependency Review fails — repo setting, not code).
+
+**AWS Vendor Upgrade (Phases 0–3) on branch `feat/module-11-lambda`:**
+Plan committed at `docs/aws-vendor-upgrade-plan.md`. Phases built:
+- **Phase 0** (S3 Gold Parquet + Glue Crawler/Catalog): `glue.tf`, `etl/loaders/s3_loader.py`,
+  DAG updated.
+- **Phase 1** (SageMaker Training + Registry + Serverless Inference):
+  `sagemaker.tf`, `services/triage/sagemaker/`, `MODEL_BACKEND` switch in `main.py`,
+  `.github/workflows/sagemaker-train.yml`. Endpoint gated behind
+  `enable_sagemaker_endpoint = false`.
+- **Phase 2** (Textract fallback): `etl/extractors/textract.py`, `pdf.py` updated.
+- **Phase 3** (Bedrock as second CrewAI backend): `agents.py` accepts `bedrock/<id>`,
+  `benchmark_bedrock.py` ready. **Comparison doc not yet generated** (needs real Bedrock
+  credentials).
+- **Phases 4–5** not started (Streamlit-on-Athena, streaming + champion-challenger).
+
+**Region reconciled to `af-south-1`** across all hardcoded defaults (`variables.tf`,
+`.env.example`, all boto3 clients, `.github/workflows/sagemaker-train.yml`). af-south-1 is
+an opt-in region — enable it in the AWS console before the first apply.
+
+**Module 11 (AWS) — still never applied. No AWS account has been touched.**
+`terraform/aws/` now defines budgets ($8/mo ceiling), the sentiment Lambda + Function URL,
+the artifacts bucket, Glue Catalog/Crawler, SageMaker Model Registry + gated Serverless
+Inference, and least-privilege IAM roles. Every billable resource carries
+`depends_on = [aws_budgets_budget.monthly_cost]`.
+Terraform deliberately does **not** create the SSM parameters: a value passed through
+Terraform lands in state in plaintext. `groq_api_key` and `api_key_hashes` are created
+out of band with `aws ssm put-parameter --type SecureString`, before the first apply.
+
+**Still open:**
 - **Module 10 migration written but NOT applied**:
   `packages/db/prisma/migrations/20260726000000_followup_agent/` → `npx prisma migrate deploy`.
 - **Module 10 Parts E (ML) and F (dashboard page)** deferred until follow-up data exists.
-- **Module 11 (AWS)** planned, not started: sentiment → Lambda + Function URL, triage artifacts
-  → S3, secrets → SSM Parameter Store, budget alerts first. ~$5/mo ceiling. Critical prerequisites:
-  `.gitignore` has **no** `*.tfstate` / `.terraform/` / `*.tfvars` patterns (local state would be
-  committable), and `API_KEY_HASHES` **must** be set or the public Function URL accepts
-  `rams-elec-frontend-2026`, which is committed in this repo.
-- **GitHub Dependency Review fails** on every PR — repo setting, not code. Enable Dependency graph
-  in Settings → Code security.
+- **Two coexisting SSM path schemes** in `terraform/aws/main.tf` — needs its own change.
+- **`terraform/` (Azure)** — PR #16 addresses 7 real errors and adds a `terraform-azure` CI job.
+- **`docs/benchmarks/bedrock-vs-groq.md` does not exist yet** — generated by running
+  `benchmark_bedrock.py` with real Bedrock credentials.
+- **Dependabot security updates are disabled** — enable in Settings → Code security.
 - **v0.dev credits (~$4)** unspent; `HeroSection` and `SecurityTrustSection` untouched by v0.
-- Three untracked scratch files (`create_project.graphql`, `proj_id.txt`, `project_columns.json`)
-  are leftover GitHub Projects tooling — safe to delete or gitignore.
+- Scratch files (`create_project.graphql`, `proj_id.txt`, `project_columns.json`) now gitignored.
 
 **Assistant permissions:** PR *merging* is blocked by the safety classifier (the user runs it);
 PR *creation*, pushing and committing are fine. Never handle AWS keys or any credential.

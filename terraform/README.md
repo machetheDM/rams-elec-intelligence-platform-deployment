@@ -5,6 +5,24 @@
 
 ---
 
+## Two root modules — do not confuse them
+
+| Directory | Cloud | Status |
+|---|---|---|
+| `terraform/` (this one) | Azure | **Designed, never provisioned** — architecture written in HCL |
+| `terraform/aws/` | AWS | **Intended to be applied** — Module 11, real account, ~$5/month ceiling |
+
+`terraform` reads only the `.tf` files in the directory it is invoked from; it does not
+recurse. So the two providers never load into the same state, and `terraform init` here
+initialises Azure only. For the AWS work, `cd terraform/aws` first and read its README —
+the budget goes up before anything billable.
+
+The distinction is not cosmetic. Nothing in this directory has ever existed as a real
+resource, and the README, the LinkedIn post, and `docs/cloud-security-architecture.md`
+all say so. Keep it that way.
+
+---
+
 ## ⚠️ Important Notice
 
 These Terraform configurations document the **intended secure cloud deployment architecture** for the Rams @Elec Intelligence Platform on Microsoft Azure. They are designed as Infrastructure as Code (IaC) demonstrating cloud security engineering capabilities.

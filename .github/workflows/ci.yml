@@ -58,7 +58,7 @@ jobs:
           pip install -r services/dispatch/requirements.txt
           pip install -r services/sentiment/requirements.txt
           pip install pytest pytest-cov
-      - run: pytest services/ --cov=services --cov-report=xml --cov-report=term
+      - run: pytest services/ tests/ --cov=services --cov=security --cov-report=xml --cov-report=term
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rams_elec_test
           GROQ_API_KEY: test_key
@@ -93,6 +93,47 @@ jobs:
           # crash, and no test here should ever spend real tokens.
           INTERNAL_API_KEY: rams-elec-frontend-2026
 
+  # ===========================================================================
+  # Terraform — AWS root module only, deliberately.
+  # ===========================================================================
+  # terraform/ (Azure) is excluded. It is a designed-never-provisioned
+  # architecture that has never been run through `terraform validate`, so adding
+  # it here would fail CI on pre-existing issues rather than on anything changed.
+  # Validating and fixing it is its own task; see CLAUDE.md.
+  #
+  # No credentials are needed or used: `init -backend=false` downloads the
+  # provider schema, and `validate` type-checks against it without contacting AWS.
+  terraform-aws:
+    name: Validate Terraform (AWS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform/aws
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # lambda.tf calls filebase64sha256() on the deployment package, and
+      # `terraform validate` evaluates that — every input is known, so a missing
+      # file is a hard error, not a deferred one. dist/ is git-ignored, so the
+      # package has to be built here.
+      #
+      # Building it rather than stubbing an empty file is the point: it also
+      # verifies the cross-platform wheel resolution in build_lambda.py, which is
+      # the part most likely to break silently.
+      - name: Build Lambda package
+        working-directory: .
+        run: python scripts/build_lambda.py
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+
   test-nextjs:
     name: Build Next.js
     runs-on: ubuntu-latest
@@ -124,7 +165,7 @@ jobs:
   security-gate:
     name: "Security Gate"
     runs-on: ubuntu-latest
-    needs: [lint-python, lint-typescript, test-python, test-crew, test-nextjs, docker-build]
+    needs: [lint-python, lint-typescript, test-python, test-crew, terraform-aws, test-nextjs, docker-build]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     steps:
       - name: Security gate check
@@ -137,6 +178,7 @@ jobs:
           echo "  lint-typescript: ${{ needs.lint-typescript.result }}"
           echo "  test-python:    ${{ needs.test-python.result }}"
           echo "  test-crew:      ${{ needs.test-crew.result }}"
+          echo "  terraform-aws:  ${{ needs.terraform-aws.result }}"
           echo "  test-nextjs:    ${{ needs.test-nextjs.result }}"
           echo "  docker-build:   ${{ needs.docker-build.result }}"
           echo ""

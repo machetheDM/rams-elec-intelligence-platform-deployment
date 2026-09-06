@@ -18,3 +18,8 @@ pyjwt>=2.9.0
 # reuses etl/'s Bronze->Silver->Gold pipeline — these mirror etl/requirements.txt
 openpyxl>=3.1.0
 pdfplumber>=0.11.0
+
+# MODEL_BACKEND=sagemaker path (main.py's _get_sagemaker_runtime) — imported
+# lazily, so this stays a light dependency even when MODEL_BACKEND=local
+# (the default) never touches it.
+boto3>=1.34.0

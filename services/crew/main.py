@@ -58,6 +58,7 @@ logger = logging.getLogger("crew")
 try:
     from crew import build_triage_crew, reset_sanitisation_log, SANITISED_OUTPUTS
     from tools import get_tool_results, reset_tool_results
+    from agents import CREW_MODEL, llm_backend_ready, llm_provider
 
     CREW_AVAILABLE = True
     CREW_IMPORT_ERROR: Optional[str] = None
@@ -290,7 +291,11 @@ def health():
     return {
         "status": "healthy",
         "crew_available": CREW_AVAILABLE,
-        "groq_configured": bool(os.getenv("GROQ_API_KEY")),
+        # Generic across providers — see agents.py's llm_backend_ready() for
+        # why this is "credentials appear present", not "verified working",
+        # when the backend is bedrock rather than groq.
+        "llm_backend": llm_provider(CREW_MODEL) if CREW_AVAILABLE else None,
+        "llm_configured": llm_backend_ready(CREW_MODEL) if CREW_AVAILABLE else False,
         "triage_service_url": TRIAGE_SERVICE_URL,
         "dispatch_service_url": DISPATCH_SERVICE_URL,
     }

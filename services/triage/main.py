@@ -118,6 +118,47 @@ xgb_model = None
 shap_explainer = None
 model_features = FEATURE_COLS
 
+# "local" (default) loads services/triage/model/*.pkl in-process — no AWS
+# dependency, no per-call cost. "sagemaker" invokes the Serverless Inference
+# endpoint from terraform/aws/sagemaker.tf instead. Default stays "local" so
+# nothing about this service's cost profile changes until this is set
+# deliberately, after Phase 1's endpoint actually exists.
+MODEL_BACKEND = os.getenv("MODEL_BACKEND", "local")
+SAGEMAKER_ENDPOINT_NAME = os.getenv(
+    "SAGEMAKER_ENDPOINT_NAME", "rams-elec-quote-estimator"
+)
+_sagemaker_runtime = None
+
+
+def _get_sagemaker_runtime():
+    global _sagemaker_runtime
+    if _sagemaker_runtime is None:
+        import boto3
+
+        _sagemaker_runtime = boto3.client(
+            "sagemaker-runtime", region_name=os.getenv("AWS_REGION", "af-south-1")
+        )
+    return _sagemaker_runtime
+
+
+def _predict_sagemaker(features: np.ndarray) -> Optional[float]:
+    """Invoke the Serverless Inference endpoint. Returns None on any failure
+    so callers fall through to the same heuristic path a missing local model
+    already falls through to — a SageMaker outage should degrade the
+    estimate, not take the endpoint down.
+    """
+    try:
+        row = ",".join(str(v) for v in features[0])
+        response = _get_sagemaker_runtime().invoke_endpoint(
+            EndpointName=SAGEMAKER_ENDPOINT_NAME,
+            ContentType="text/csv",
+            Body=row,
+        )
+        return float(response["Body"].read().decode().strip())
+    except Exception as e:
+        logger.warning(f"SageMaker endpoint invocation failed: {e} — falling back")
+        return None
+
 
 def load_model():
     """Load trained XGBoost model or return None if not trained yet."""
@@ -460,35 +501,48 @@ async def estimate_cost(input_data: CostEstimateInput):
         logger.warning(f"Gold layer query failed: {e}")
         hist_min, hist_max, hist_avg = 0, 0, 0
 
-    # Use XGBoost model if available
-    if xgb_model is not None and similar_count >= 5:
+    # Use a model if one is available for the configured backend. SHAP
+    # explanations only exist for the local model — the SageMaker endpoint
+    # returns a bare prediction, so its explanation is deliberately plainer
+    # rather than silently reusing the local explainer against a different
+    # model's weights.
+    if similar_count >= 5:
         try:
             features = _build_features(input_data)
-            pred = float(xgb_model.predict(features)[0])
-
-            # Get SHAP explanation
+            pred: Optional[float] = None
             explanation = ""
-            if shap_explainer is not None:
-                shap_values = shap_explainer.shap_values(features)
-                feature_impacts = list(zip(model_features, shap_values[0]))
-                feature_impacts.sort(key=lambda x: abs(x[1]), reverse=True)
-                top_factors = [
-                    f"{_explain_feature(f, v)}" for f, v in feature_impacts[:3]
-                ]
-                explanation = f"Estimate based on {similar_count} similar jobs. Key factors: {'; '.join(top_factors)}."
-            else:
-                explanation = (
-                    f"Estimate based on {similar_count} similar historical jobs."
-                )
 
-            variance = abs(pred * 0.2)
-            return CostEstimateResult(
-                cost_min=round(max(0, pred - variance), 2),
-                cost_max=round(pred + variance, 2),
-                confidence=min(0.9, similar_count / 50),
-                explanation=explanation,
-                similar_jobs_count=similar_count,
-            )
+            if MODEL_BACKEND == "sagemaker":
+                pred = _predict_sagemaker(features)
+                if pred is not None:
+                    explanation = (
+                        f"Estimate based on {similar_count} similar jobs "
+                        "(SageMaker quote estimator)."
+                    )
+            elif xgb_model is not None:
+                pred = float(xgb_model.predict(features)[0])
+                if shap_explainer is not None:
+                    shap_values = shap_explainer.shap_values(features)
+                    feature_impacts = list(zip(model_features, shap_values[0]))
+                    feature_impacts.sort(key=lambda x: abs(x[1]), reverse=True)
+                    top_factors = [
+                        f"{_explain_feature(f, v)}" for f, v in feature_impacts[:3]
+                    ]
+                    explanation = f"Estimate based on {similar_count} similar jobs. Key factors: {'; '.join(top_factors)}."
+                else:
+                    explanation = (
+                        f"Estimate based on {similar_count} similar historical jobs."
+                    )
+
+            if pred is not None:
+                variance = abs(pred * 0.2)
+                return CostEstimateResult(
+                    cost_min=round(max(0, pred - variance), 2),
+                    cost_max=round(pred + variance, 2),
+                    confidence=min(0.9, similar_count / 50),
+                    explanation=explanation,
+                    similar_jobs_count=similar_count,
+                )
         except Exception as e:
             logger.error(f"Model prediction failed: {e}")
 

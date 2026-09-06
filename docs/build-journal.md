@@ -290,3 +290,210 @@ Added `CLAUDE.md` at the repo root — architecture, the conventions that get vi
 silent-no-op bug class, verification commands, and current open threads. Claude Code loads it
 automatically each session, so returning to this project after a long gap (or handing it to
 someone else) no longer depends on reconstructing intent from the diff.
+
+---
+
+## Module 11 (AWS): the two things that had to happen before any deployment — 2026-07-26
+
+Module 11 puts the sentiment service on a Lambda Function URL. A Function URL is a public
+HTTPS endpoint on the open internet — the first genuinely public surface this project has had.
+Two prerequisites were identified while scoping it, and both were addressed before writing a
+single line of deployment code, because both stop being fixable the moment they are exercised.
+
+### Prerequisite 1: the API key middleware fell open, not closed
+
+`security/auth/api_key_middleware.py` read `API_KEY_HASHES` from the environment and, when it
+was unset, fell back to the SHA-256 hashes of three keys hardcoded in the file:
+
+```python
+API_KEY_HASHES_RAW = os.getenv("API_KEY_HASHES", ",".join([
+    _hash_key("rams-elec-frontend-2026"), ...
+]))
+```
+
+On a laptop this is a convenience — `docker compose up` works with no setup. On a Function URL
+it is an open endpoint, because those three strings are committed to a public repository: in
+that file, in `.env.example`, in `docker-compose.yml`, in `ci.yml`, and in five service test
+files. Anyone who has read the repo can authenticate.
+
+The instinct is to delete the defaults. That breaks local development and every service test,
+which is presumably why they were there. The actual problem is not the defaults — it is that
+the *absence of configuration* selected the permissive branch. So the branch is now selected by
+`APP_ENV` instead:
+
+- `development` (the default): unchanged behaviour, plus a warning.
+- anything else: `API_KEY_HASHES` is required, and the module raises `RuntimeError` **at import**
+  without it. A service that refuses to boot is a visible failure. A service quietly accepting a
+  published key is not — which is the same silent-success bug class this project keeps finding,
+  just pointed at authentication.
+
+Two details worth keeping:
+
+**Only the literal string `development` is permissive.** `staging`, `production`, a typo like
+`prodution`, and an empty string all fail closed. An unrecognised environment must never be the
+open branch — that is precisely the case nobody tests.
+
+**Supplying a committed key's hash explicitly also fails.** Hashing a public string does not make
+it a secret; the hash is as computable as the key. Without this check the natural deployment
+mistake — copying `.env.example` forward and setting `API_KEY_HASHES` to what was already there —
+would satisfy the new requirement while changing nothing. The check exists because the fix would
+otherwise have been theatre.
+
+`tests/test_api_key_env_gate.py` covers all of it, including end-to-end through the middleware:
+with `APP_ENV=production`, `rams-elec-frontend-2026` gets a 401 through both the header and the
+query-parameter path. This is the first test in the repo that belongs to no single service, hence
+the new root `tests/` directory — added to `pytest.ini`'s `testpaths` *and* to the `ci.yml`
+invocation, which passes paths explicitly and would otherwise have ignored `testpaths` and never
+run them. A test that silently never runs is the same bug class again.
+
+### Prerequisite 2: Terraform state was committable
+
+`.gitignore` had no `*.tfstate`, `.terraform/`, `*.tfvars`, or `*.tfplan` patterns — the repo
+predates having any Terraform that gets applied. `terraform apply` writes every attribute of
+every resource into `terraform.tfstate` in plaintext, including generated passwords and anything
+passed through a variable. One routine `git add -A` after the first apply would have committed
+them to a public repository. Fixed before the first apply rather than after, because the remedy
+afterwards is key rotation and a history rewrite.
+
+The related rule, written into `terraform/aws/README.md`: nothing secret goes into a `.tfvars`
+file, a variable, or an output. Runtime secrets go to SSM Parameter Store as `SecureString`,
+created out of band. A secret routed through Terraform to keep it out of the repo lands in state
+in plaintext instead — which is the same exposure with more steps.
+
+### What was actually built: the budget, and deliberately nothing else
+
+`terraform/aws/` currently contains two `aws_budgets_budget` resources and no billable
+infrastructure at all. That is the finished state of this step, not a stopping point. A budget
+created after a runaway resource tells you what you already owe.
+
+The ordering is enforced twice, because Terraform's dependency graph has no concept of a
+guardrail: procedurally via `terraform apply -target=aws_budgets_budget.monthly_cost` as its own
+step, and structurally by requiring every billable resource added later to carry
+`depends_on = [aws_budgets_budget.monthly_cost]`.
+
+Two budgets, not one. The `$5` monthly ceiling is blind to the *shape* of the spend — `$5` spread
+evenly across a month and `$5` burned in one afternoon by a misconfigured loop trip it at exactly
+the same moment, but only one of those is still recoverable. A `$1` daily tripwire catches the
+second case about a day in. The monthly budget's forecast alert does similar work from the other
+direction: it fires on trajectory, days before the money is gone, which is the only alert that
+arrives while there is still something to do about it.
+
+Stated plainly in the README, because it is the kind of thing a cost guardrail is assumed to do
+and does not: **AWS Budgets alerts on spend, it does not cap it.** Nothing in that module will
+stop a charge. `aws_budgets_budget_action` can attach a deny-all IAM policy at 100%, which is the
+only mechanism that genuinely halts spending — deliberately not used, on the grounds that locking
+oneself out of the account has a larger blast radius than a $5 overrun on a portfolio project.
+Recorded as a trade-off rather than silently omitted.
+
+### Note on the repository's two Terraform roots
+
+`terraform/` is Azure, designed for ECCU524 and **never provisioned**. `terraform/aws/` is
+intended to actually run. Keeping them as separate root modules is partly mechanical — one state
+file cannot sensibly hold two providers — but mostly it is to keep the claim honest. The Azure
+config is an architecture document written in HCL, the README says so, and adding a directory
+next to it that *does* get applied is exactly the situation where that distinction quietly erodes.
+Both READMEs now name the difference explicitly.
+
+Nothing has been applied. No AWS account has been touched.
+
+### Lessons learned
+
+Both prerequisites share a shape with the silent no-op class already catalogued in `CLAUDE.md`,
+inverted: not an operation that fails while reporting success, but a *missing* configuration that
+succeeds while providing no protection. Unset `API_KEY_HASHES` authenticated everyone. Absent
+gitignore patterns protected nothing. Neither would have produced an error, a failed test, or a
+line in a log — and both would have been discovered from the outside.
+
+---
+
+## Module 11: packaging the sentiment service for Lambda — 2026-07-26
+
+### Mangum, not a native handler
+
+The endpoint could have been rewritten as a plain `def handler(event, context)` — less code,
+no adapter dependency. It would also have silently dropped the entire `security/` middleware
+stack: API key auth, rate limiting, security headers, input sanitisation, audit logging. On a
+public Function URL that is the wrong trade in every direction, so the FastAPI app is wrapped
+with Mangum and requests still traverse the full stack.
+
+`test_lambda_handler.py` asserts that rather than assuming it: a synthetic Function URL event
+(payload format 2.0) for `POST /sentiment/analyze` with no key returns **401**, and the health
+response carries `X-Frame-Options` and a CSP. Without those tests "requests still go through
+the middleware" is an intention, not a fact.
+
+### The import order is load-bearing
+
+`VALID_API_KEY_HASHES` resolves at *import*. SSM configuration therefore has to be in
+`os.environ` before `main` is imported — not before the handler is invoked. So
+`lambda_handler.py` imports `main` at the **bottom** of the file, after `_load_ssm_config()`.
+
+Moving that import up to join the others is the natural tidy-up, and it would produce a Lambda
+that raises on every single request: `APP_ENV=production` with `API_KEY_HASHES` not yet loaded.
+The docstring says so in as many words, because the failure is invisible in review.
+
+Related: the SSM loader deliberately does not catch exceptions. If the execution role is
+missing `ssm:GetParametersByPath`, the function must fail on *that*, not boot and then fail
+later in the API key gate with a message about configuration. Fail on the actual cause.
+
+### Two things Windows quietly does wrong to a Linux artifact
+
+The dev machine is Windows and Lambda is Linux, which breaks a naive `pip install -t`:
+
+1. **Wheel platform.** Plain `pip install -t` resolves `win_amd64` wheels for anything with
+   compiled extensions — `pydantic_core` above all — and the function dies at cold start with
+   `ModuleNotFoundError: pydantic_core._pydantic_core`. Pinning
+   `--platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all:` moves that from
+   a deploy-time failure to a build-time one. Verified in the artifact:
+   `pydantic_core/_pydantic_core.cpython-312-x86_64-linux-gnu.so`.
+
+2. **Windows `.exe` launchers.** pip generates console-script shims from the *local* platform
+   even under `--platform`, so the package contained `bin/fastapi.exe`, `bin/httpx.exe`, and
+   friends — Windows binaries, in a Linux Lambda, that nothing can execute.
+
+The second only surfaced because reproducibility was tested rather than assumed. The zip writer
+already pinned every entry's timestamp to 1980-01-01 specifically so `source_code_hash` would be
+stable, and the comment saying so was wrong: two consecutive builds of identical source produced
+different hashes. The diff pointed at the `.exe` files — pip embeds something non-reproducible in
+each one — and at the `*.dist-info/RECORD` files that record their hashes. Pruning all of it made
+the build byte-identical across runs and dropped 0.2MB of Windows executables that could never
+have run.
+
+That matters beyond tidiness: a `source_code_hash` that changes on every build means Terraform
+reports a Lambda update on every `plan`, which is exactly how people learn to stop reading plan
+output.
+
+Final artifact: 3.5MB, flat layout (`main.py`, `lambda_handler.py`, `security/` at the root,
+because Lambda puts `/var/task` on `sys.path`), boto3 excluded since the runtime provides it.
+
+### Cost controls are structural, not just alerts
+
+The budgets from the previous entry notify; they cannot stop anything. So the ceiling is mostly
+held by design decisions in the Terraform:
+
+- `reserved_concurrent_executions = 5` — a retry loop scales to five, not to the account limit.
+  Budget alerts are evaluated on a schedule and would arrive long after that spend.
+- `timeout = 30s` — a hung upstream call cannot bill for minutes.
+- An **explicitly created** log group with 14-day retention. A log group that Lambda creates
+  implicitly on first invocation has retention "Never expire" and accrues storage forever. This
+  is probably the most common way a free-tier AWS project starts costing money.
+- `noncurrent_version_expiration` on the artifacts bucket, so versioning does not turn a few MB
+  into unbounded growth.
+- SSE-S3 rather than a customer-managed KMS key: a CMK is $1/month, 20% of the entire budget, to
+  encrypt a model artifact that contains no personal data and is already private.
+
+### Function URL auth: NONE, and why that is defensible
+
+`authorization_type = "NONE"` means AWS performs no authentication and authorisation is entirely
+the application's job. `AWS_IAM` was the alternative and was rejected: the caller is an n8n
+workflow that would have to implement SigV4 signing, and the realistic outcome of that friction
+is a long-lived IAM access key pasted into an n8n credential — a worse secret to hold than an API
+key hash in SSM.
+
+This is only a defensible choice *because* the API key middleware now fails closed. It did not,
+until earlier the same day. The two decisions are load-bearing on each other, which is why the
+reasoning sits in `lambda.tf` next to the resource rather than only here.
+
+### Still not applied
+
+Nothing has been provisioned. No AWS account has been touched. The Terraform is written and CI
+validates it; the first `terraform apply` has not been run.
