@@ -41,7 +41,7 @@ export default function TestimonialsSection() {
     <section className="relative py-24 lg:py-32">
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-14 max-w-2xl">
-          <span className="mono-label">07 / Client Trust</span>
+          <span className="mono-label">08 / Client Trust</span>
           <h2 className="section-heading mt-4">
             {isEmpty ? "Verified, not just claimed." : "What clients say."}
           </h2>

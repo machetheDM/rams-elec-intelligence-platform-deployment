@@ -3,7 +3,7 @@ services:
   # PostgreSQL Database
   # =============================================================================
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: rams-elec-db
     env_file: .env
     environment:

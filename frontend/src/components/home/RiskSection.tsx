@@ -53,7 +53,7 @@ export default function RiskSection() {
         <div className="grid grid-cols-1 items-start gap-14 lg:grid-cols-12 lg:gap-20">
           <div className="lg:col-span-5">
             <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-red-400">
-              04 / The Risk of Mediocrity
+              05 / The Risk of Mediocrity
             </span>
             <h2 className="section-heading mt-4">
               Electrical failure is

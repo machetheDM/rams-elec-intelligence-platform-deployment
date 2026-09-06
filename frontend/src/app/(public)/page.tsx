@@ -1,11 +1,14 @@
 import InquiryForm from "@/components/inquiry/InquiryForm";
 import HeroSection from "@/components/home/HeroSection";
 import ServicesBento from "@/components/home/ServicesBento";
+import ProcessSection from "@/components/home/ProcessSection";
 import QuoteEstimatorStats from "@/components/home/QuoteEstimatorStats";
 import RiskSection from "@/components/home/RiskSection";
+import AboutSection from "@/components/home/AboutSection";
 import SecurityTrustSection from "@/components/home/SecurityTrustSection";
 import TestimonialsSection from "@/components/home/TestimonialsSection";
 import AlertSignupSection from "@/components/home/AlertSignupSection";
+import ContactSection from "@/components/home/ContactSection";
 import CtaSection from "@/components/home/CtaSection";
 
 /**
@@ -35,11 +38,14 @@ export default function HomePage() {
       </section>
 
       <ServicesBento />
+      <ProcessSection />
       <QuoteEstimatorStats />
       <RiskSection />
+      <AboutSection />
       <SecurityTrustSection />
       <TestimonialsSection />
       <AlertSignupSection />
+      <ContactSection />
       <CtaSection />
     </div>
   );

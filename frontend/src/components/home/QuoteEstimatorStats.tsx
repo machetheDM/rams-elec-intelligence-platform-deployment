@@ -44,7 +44,7 @@ export default function QuoteEstimatorStats() {
         <div className="grid grid-cols-1 gap-14 lg:grid-cols-12 lg:gap-20">
           {/* ---- Left: narrative ---- */}
           <div className="lg:col-span-5">
-            <span className="mono-label">03 / Machine Learning</span>
+            <span className="mono-label">04 / Machine Learning</span>
             <h2 className="section-heading mt-4 text-balance">
               Quoting backed by
               <br />

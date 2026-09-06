@@ -61,7 +61,7 @@ export default function AlertSignupSection() {
         <div className="grid grid-cols-1 gap-14 lg:grid-cols-12 lg:gap-20">
           {/* ---- Left: proposition ---- */}
           <div className="lg:col-span-6">
-            <span className="mono-label">08 / Stay Powered</span>
+            <span className="mono-label">09 / Stay Powered</span>
             <h2 className="section-heading mt-4 text-balance">
               Know before
               <br />

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import LoadSheddingWidget from "@/components/loadshedding/LoadSheddingWidget";
 
@@ -18,8 +19,17 @@ const CREDENTIALS = [
 export default function HeroSection() {
   return (
     <section className="relative flex min-h-screen items-center overflow-hidden">
-      {/* Layered background: base, blueprint grid, amber ignition glows */}
+      {/* Layered background: photo, dark overlay, blueprint grid, amber ignition glows */}
       <div className="absolute inset-0 bg-industrial-950">
+        <Image
+          src="https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=1920&q=80"
+          alt=""
+          fill
+          priority
+          className="object-cover opacity-20"
+          sizes="100vw"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-industrial-950 via-industrial-950/95 to-industrial-950/70" />
         <div className="absolute inset-0 bg-grid mask-fade" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(245,158,11,0.10),transparent_55%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(245,158,11,0.05),transparent_50%)]" />

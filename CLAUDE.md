@@ -265,17 +265,40 @@ R² 0.5121 · CV MAE R10,393.38**, 108/27 split, synthetic data), the landing pa
 Module 10, AWS Vendor Upgrade Phases 0–3, follow-up Lambda + EventBridge, the Azure
 Terraform validation fix, and all frontend pages. Zero open PRs.
 
-**Frontend complete (37 routes, build passes):**
-- Public: `/` (landing), `/services`, `/inquire`, `/login`
+**Frontend complete (38 routes, build passes):**
+- Public: `/` (landing), `/services`, `/gallery` (new), `/inquire`, `/login`
 - Portal: `/dashboard`, `/equipment`, `/service-history`, `/compliance`, `/chatbot`
-- Admin: `/admin/jobs` (Kanban board), `/admin/analytics` (6-page Recharts dashboard)
-- Analytics pages: overview, inquiries, revenue, equipment, technicians, load-shedding impact
-- Analytics API routes query Prisma directly (`src/lib/db.ts` singleton)
+- Admin: `/admin/jobs` (Kanban board), `/admin/analytics` (7-page Recharts dashboard inc. followups)
+- Analytics pages: overview, inquiries, revenue, equipment, technicians, load-shedding, followups
+- Analytics API routes query Prisma directly (`src/lib/db.ts` singleton, explicit `datasourceUrl`
+  override to avoid Prisma `.env` auto-loading from `packages/db/.env`)
 - API proxies: `/api/triage/*`, `/api/dispatch/*`, `/api/admin/jobs`, `/api/chatbot`,
   `/api/model-metrics`, `/api/alerts/subscribe`, `/api/auth/[...nextauth]`
 - All browser→service calls now go through same-origin proxy routes (no `NEXT_PUBLIC_*` API keys).
 - The Streamlit `dashboard/` directory is retained as reference but the production analytics
   dashboard is the Next.js admin section (unified auth, design system, no extra container).
+
+**Frontend UI overhaul (surpasses ramsatelec.com):**
+- Landing page now has 11 sections: Hero (with Unsplash background image), AI Inquiry, Services
+  Bento, Process ("Blueprint to Mastery"), Quote Estimator, Risk, About (with image + stat
+  overlay), Security/Trust, Testimonials, Load-Shedding Alerts, Contact (phone/email/location/
+  hours), and Closing CTA.
+- Gallery page at `/gallery` with 9 projects across 4 categories (cold rooms, electrical, HVAC,
+  emergency), Unsplash stock photos, category filtering, and a transparency note explaining
+  images are representative until real project photos arrive.
+- Services page enhanced with full-bleed hero image header, 3 featured capability cards, process
+  section, and emergency CTA.
+- Navbar updated: Gallery + Contact links, Login link (desktop + mobile), preserved phone CTA.
+- `next.config.ts` adds `images.remotePatterns` for `images.unsplash.com`.
+- `auth.config.ts` now imports the shared `prisma` singleton from `@/lib/db` instead of creating
+  its own `PrismaClient()` — fixes the Prisma `.env` auto-loading bug where auth hit the wrong DB.
+
+**Seed data now includes admin user and follow-ups:**
+- `packages/db/prisma/seed.ts` creates: 12 service types, 22 customers, 5 technicians,
+  ~49 equipment, 60 jobs, 30 inquiries, 15 quotes, 30 maintenance schedules, 112 load-shedding
+  events, 40 notifications, 1 admin user (`admin@ramsatelec.com` / `password123`, bcryptjs hash),
+  and 25 follow-ups with satisfaction/sentiment data.
+- The admin password is a dev-only `$2a` bcryptjs hash. Never deploy with this credential.
 
 **AWS Vendor Upgrade (Phases 0–3) — now on `main`:**
 - **Phase 0** (S3 Gold Parquet + Glue Crawler/Catalog): `glue.tf`, `etl/loaders/s3_loader.py`.
@@ -309,13 +332,14 @@ designed-never-provisioned.
 - `npx prisma generate` re-run so the Prisma client includes `FollowUp`.
 
 **Still open:**
-- **Module 10 migration written but NOT applied**:
-  `packages/db/prisma/migrations/20260726000000_followup_agent/` → `npx prisma migrate deploy`.
 - **Module 10 ML model** requires a running Postgres with 100+ labelled follow-ups to train.
 - **Two coexisting SSM path schemes** in `terraform/aws/main.tf` — needs its own change.
 - **`docs/benchmarks/bedrock-vs-groq.md` does not exist yet** — needs real Bedrock credentials.
 - **Dependabot security updates are disabled** — enable in Settings → Code security.
-- **v0.dev credits (~$4)** unspent; `HeroSection` and `SecurityTrustSection` untouched by v0.
+- **Gallery images are Unsplash stock** — replace with actual Rams @Elec project photos when available.
+- **`packages/db/.env`** still points to port 5433 (another project). Local dev must set
+  `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/rams_elec` in shell environment.
+- **`docker-compose.yml`** image changed to `postgres:16-alpine` to match existing volume data.
 
 **Assistant permissions:** PR *merging* is blocked by the safety classifier (the user runs it);
 PR *creation*, pushing and committing are fine. Never handle AWS keys or any credential.

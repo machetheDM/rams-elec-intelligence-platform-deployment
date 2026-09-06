@@ -17,7 +17,7 @@ export default function SecurityTrustSection() {
     <section className="relative py-24 lg:py-32">
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-14 max-w-2xl">
-          <span className="mono-label">05 / Platform Security</span>
+          <span className="mono-label">07 / Platform Security</span>
           <h2 className="section-heading mt-4">Built secure, not patched secure.</h2>
           <p className="section-subheading mt-5">
             Your job data, equipment registry and compliance documents sit behind a platform

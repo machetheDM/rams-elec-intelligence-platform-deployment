@@ -649,6 +649,84 @@ async function main() {
   }
   console.log(`  ✓ 40 notification logs`);
 
+  // --- NEXTAUTH USER — admin login for testing ---
+  console.log("Creating admin user...");
+  // NextAuth with CredentialsProvider needs a user row. The password is
+  // bcrypt-hashed "password123" — dev only, never deployed with this hash.
+  await prisma.user.deleteMany();
+  await prisma.account.deleteMany();
+  await prisma.session.deleteMany();
+  await prisma.user.create({
+    data: {
+      name: "Admin",
+      email: "admin@ramsatelec.com",
+      role: "admin",
+      // bcrypt hash of "password123" (10 rounds, bcryptjs $2a)
+      passwordHash:
+        "$2a$10$1dIr/SxJgShqs/tfda1kfu.DAyxmd3yF550MU7byKd5y4LiFe7g2G",
+    },
+  });
+  console.log(`  ✓ admin user (admin@ramsatelec.com / password123)`);
+
+  // --- FOLLOW-UPS — sample follow-up records for the analytics page ---
+  console.log("Creating follow-ups...");
+  await prisma.followUp.deleteMany();
+  const completedJobs = createdJobs.filter((j: any) => j.status === "complete");
+  const themes = [
+    "professionalism",
+    "timeliness",
+    "value_for_money",
+    "communication",
+    "workmanship",
+  ];
+  let followUpCount = 0;
+  for (const job of completedJobs.slice(0, 25)) {
+    const responded = Math.random() > 0.25;
+    const stillWorking = responded ? Math.random() > 0.15 : null;
+    const satisfaction = responded
+      ? pick([3, 4, 4, 5, 5, 5, 4, 5, 3, 4])
+      : null;
+    const sentimentScore = responded
+      ? randomBetween(stillWorking ? 0.5 : -0.5, stillWorking ? 1.0 : 0.3)
+      : null;
+    const selectedThemes = responded
+      ? themes.filter(() => Math.random() > 0.5).slice(0, 3)
+      : [];
+
+    await prisma.followUp.create({
+      data: {
+        jobId: job.id,
+        customerId: job.customerId,
+        equipmentId: job.equipmentId,
+        daysSinceCompletion: Math.floor(randomBetween(7, 90)),
+        triggeredAt: daysAgo(Math.floor(randomBetween(1, 60))),
+        responseReceived: responded,
+        respondedAt: responded ? daysAgo(Math.floor(randomBetween(0, 55))) : null,
+        stillWorking,
+        satisfactionRating: satisfaction,
+        commentText: responded
+          ? pick([
+              "Great service, everything working perfectly.",
+              "Technician was professional and on time.",
+              "Good work but a bit pricey.",
+              "Excellent! Cold room has been running without issues.",
+              "The repair fixed the issue. Happy with the result.",
+              "Had to call back once but sorted quickly.",
+              "Very satisfied. Will recommend to others.",
+              "Average experience. Communication could be better.",
+              "Outstanding workmanship. SANS certified and documented.",
+              "Quick response to our emergency. Saved our stock.",
+            ])
+          : null,
+        sentimentScore,
+        sentimentThemes: selectedThemes.length > 0 ? selectedThemes : [],
+        followUpIssueCreated: !stillWorking && responded,
+      },
+    });
+    followUpCount++;
+  }
+  console.log(`  ✓ ${followUpCount} follow-ups`);
+
   console.log("\nSeed complete!");
   console.log("Summary:");
   console.log(`  ${createdServiceTypes.length} service types`);
@@ -661,6 +739,8 @@ async function main() {
   console.log(`  30 maintenance schedules`);
   console.log(`  ${areaZones.length * 14} load-shedding events`);
   console.log(`  40 notification logs`);
+  console.log(`  1 admin user`);
+  console.log(`  ${followUpCount} follow-ups`);
 }
 
 main()

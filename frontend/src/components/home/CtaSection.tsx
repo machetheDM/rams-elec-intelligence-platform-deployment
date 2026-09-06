@@ -9,7 +9,7 @@ export default function CtaSection() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(245,158,11,0.07),transparent_60%)]" />
 
       <div className="relative mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
-        <span className="mono-label">09 / Direct Mastery Link</span>
+        <span className="mono-label">10 / Direct Mastery Link</span>
         <h2 className="mt-5 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           Ready to engineer safety?
         </h2>

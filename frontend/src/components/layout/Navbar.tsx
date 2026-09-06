@@ -7,9 +7,9 @@ import Logo from "./Logo";
 const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/services", label: "Services" },
-  { href: "/#solutions", label: "Solutions" },
+  { href: "/gallery", label: "Gallery" },
   { href: "/#about", label: "About" },
-  { href: "/inquire", label: "Inquire" },
+  { href: "/#contact", label: "Contact" },
 ];
 
 export default function Navbar() {
@@ -58,6 +58,12 @@ export default function Navbar() {
             >
               +27 71 101 8493
             </a>
+            <Link
+              href="/login"
+              className="text-sm font-medium text-industrial-300 hover:text-brand-400 transition-colors"
+            >
+              Login
+            </Link>
             <Link href="/inquire" className="btn-primary text-sm !px-5 !py-2.5">
               Get a Quote
             </Link>
@@ -95,8 +101,15 @@ export default function Navbar() {
               ))}
               <div className="mt-3 pt-3 border-t border-industrial-800 flex flex-col gap-2 px-4">
                 <a href="tel:+27711018493" className="text-sm text-industrial-400">
-                  📞 +27 71 101 8493
+                  +27 71 101 8493
                 </a>
+                <Link
+                  href="/login"
+                  onClick={() => setMobileOpen(false)}
+                  className="text-sm text-industrial-400 hover:text-brand-400 transition-colors"
+                >
+                  Login / Portal
+                </Link>
                 <Link
                   href="/inquire"
                   onClick={() => setMobileOpen(false)}
