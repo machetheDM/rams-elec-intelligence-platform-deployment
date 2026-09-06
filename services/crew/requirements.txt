@@ -19,3 +19,9 @@ python-dotenv>=1.0.0
 
 # Required by security.setup -> security.auth.jwt_middleware
 pyjwt>=2.9.0
+
+# litellm's bedrock/* provider (CREW_MODEL=bedrock/...) signs requests with
+# boto3's SigV4 — required only when that provider prefix is actually used,
+# but installed unconditionally since it's a light, no-op dependency
+# otherwise (no AWS calls happen unless CREW_MODEL says bedrock/*).
+boto3>=1.34.0

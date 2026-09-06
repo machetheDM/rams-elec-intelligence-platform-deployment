@@ -47,6 +47,49 @@ def test_health_endpoint_is_reachable_without_api_key():
     body = response.json()
     assert body["status"] == "healthy"
     assert "crew_available" in body
+    # Provider-generic fields (Groq or Bedrock — see agents.py llm_provider),
+    # not a Groq-specific "groq_configured" flag.
+    assert "llm_backend" in body
+    assert "llm_configured" in body
+
+
+# ---------------------------------------------------------------------------
+# LLM backend switch (agents.py) — must pass with or without crewai, since
+# llm_provider()/llm_backend_ready() are pure string/env logic with no
+# CrewAI import of their own.
+# ---------------------------------------------------------------------------
+
+
+@crew_installed
+def test_llm_provider_defaults_to_groq_for_bare_model_name():
+    from agents import llm_provider
+
+    assert llm_provider("llama-3.3-70b-versatile") == "groq"
+
+
+@crew_installed
+def test_llm_provider_reads_bedrock_prefix():
+    from agents import llm_provider
+
+    assert llm_provider("bedrock/anthropic.claude-3-haiku-20240307-v1:0") == "bedrock"
+
+
+@crew_installed
+def test_llm_backend_ready_false_for_unknown_provider(monkeypatch):
+    from agents import llm_backend_ready
+
+    assert llm_backend_ready("some-unsupported-provider/model") is False
+
+
+@crew_installed
+def test_llm_backend_ready_true_for_bedrock_with_access_key(monkeypatch):
+    from agents import llm_backend_ready
+
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    monkeypatch.delenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", raising=False)
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAFAKEEXAMPLE")
+
+    assert llm_backend_ready("bedrock/anthropic.claude-3-haiku-20240307-v1:0") is True
 
 
 def test_process_rejects_requests_without_api_key():

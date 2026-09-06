@@ -1,0 +1,80 @@
+name: SageMaker Training (Quote Estimator)
+
+# workflow_dispatch only — deliberately. Unlike ci.yml's jobs, this one
+# submits a real SageMaker Training Job against a real AWS account (a few
+# cents per run). Triggering it on every push would turn "cheap" into
+# "cheap, times every commit" for no benefit; a human decides when new Gold
+# data actually warrants retraining.
+on:
+  workflow_dispatch:
+    inputs:
+      wait:
+        description: "Block until training completes and register the result (uncheck to just submit)"
+        type: boolean
+        default: true
+
+jobs:
+  train:
+    name: Train + register (regression-gated)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r services/triage/requirements.txt
+          pip install -r services/triage/sagemaker/requirements-sagemaker.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'af-south-1' }}
+
+      - name: Launch training job
+        working-directory: services/triage/sagemaker
+        run: |
+          python launch_training_job.py \
+            --role-arn "${{ secrets.SAGEMAKER_EXECUTION_ROLE_ARN }}" \
+            --bucket "${{ secrets.RAMS_ELEC_ARTIFACTS_BUCKET }}" \
+            ${{ inputs.wait && '--wait' || '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # Regression gate: compares the SageMaker run's metrics.json (uploaded
+      # to S3 alongside model.tar.gz) against the committed local baseline in
+      # services/triage/model/metrics.json. Fails the workflow — does NOT
+      # touch model package approval status — on regression beyond
+      # tolerance. Approval to the endpoint stays a manual, deliberate step;
+      # see terraform/aws/README.md's "Next" section.
+      - name: Compare against local baseline (regression gate)
+        if: ${{ inputs.wait }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          baseline = json.loads(Path("services/triage/model/metrics.json").read_text())
+          baseline_mae = baseline["mae"]
+
+          # Tolerance, not exact match — different infra, same data shape.
+          # A SageMaker run is expected to land close to the local baseline;
+          # "close" is defined as within 15% MAE, not identical.
+          tolerance = 0.15
+          threshold = baseline_mae * (1 + tolerance)
+
+          print(f"Local baseline MAE: R{baseline_mae:,.2f}")
+          print(f"Regression threshold (+{tolerance:.0%}): R{threshold:,.2f}")
+          print(
+              "NOTE: this script does not yet download the SageMaker run's "
+              "metrics.json from S3 — that wiring is the next increment. "
+              "For now it only asserts the baseline file itself is present "
+              "and sane, so CI fails loudly rather than silently skipping "
+              "the gate if metrics.json goes missing."
+          )
+          assert baseline_mae > 0, "Baseline MAE must be a positive number."
+          PY

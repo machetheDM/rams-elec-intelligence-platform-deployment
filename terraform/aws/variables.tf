@@ -10,15 +10,15 @@
 # descriptions, so `terraform fmt` sees only single-line attributes.
 # =============================================================================
 
-# Default is eu-west-1 (Ireland), not af-south-1 (Cape Town), despite the
-# business being South African. af-south-1 is an opt-in region that has to be
-# enabled per-account, and it prices roughly 15-20% above eu-west-1. For a
-# service invoked a few times a day by an n8n workflow, the extra ~180ms of
-# latency is invisible and the cost difference is not. Override if that changes.
+# af-south-1 (Cape Town). The business is South African and data-residency is
+# a clean story for a portfolio project. af-south-1 is an opt-in region —
+# enable it once in the AWS console before the first apply. It prices roughly
+# 15-20% above eu-west-1, but at this project's scale (single-digit dollars/month)
+# the absolute difference is cents, and the latency is lower for local users.
 variable "aws_region" {
   description = "Region for all non-global resources."
   type        = string
-  default     = "eu-west-1"
+  default     = "af-south-1"
 }
 
 variable "environment" {
@@ -48,10 +48,16 @@ variable "alert_email" {
   }
 }
 
+# Raised from $5 to $8 when Glue was added (glue.tf). An on-demand crawler run
+# is ~$0.44/DPU-hour for a few minutes — cents, not dollars — but the ceiling
+# is meant to reflect what a mistake could plausibly cost, not just the happy
+# path. $3 of headroom covers a crawler mis-scheduled to run more often than
+# intended; it does not cover an accidentally-scheduled SageMaker endpoint,
+# which is a different order of magnitude and would need its own review.
 variable "monthly_budget_usd" {
   description = "Monthly cost ceiling in USD. Alerts only — AWS Budgets does not cap spend."
   type        = number
-  default     = 5
+  default     = 8
 
   validation {
     condition     = var.monthly_budget_usd > 0 && var.monthly_budget_usd <= 50
@@ -176,6 +182,50 @@ variable "artifact_version_retention_days" {
     condition     = var.artifact_version_retention_days >= 1
     error_message = "artifact_version_retention_days must be at least 1."
   }
+}
+
+# ── Glue / data lake ───────────────────────────────────────────────────
+
+# Must match the prefix etl/loaders/s3_loader.py writes to (its default is
+# also "gold"). Kept as a variable rather than hardcoded in two places so a
+# rename doesn't silently desync Terraform and the loader.
+variable "gold_s3_prefix" {
+  description = "S3 key prefix under the artifacts bucket that the Gold Glue Crawler targets."
+  type        = string
+  default     = "gold"
+}
+
+# ── SageMaker ──────────────────────────────────────────────────────────
+
+# Off by default. sagemaker.tf's aws_sagemaker_model requires an S3 model
+# artifact that only exists after launch_training_job.py has run at least
+# once and produced an approved model package — flip this once that's true.
+# Leaving it false costs nothing and fails no plan.
+variable "enable_sagemaker_endpoint" {
+  description = "Deploy the Serverless Inference endpoint. Requires a trained model artifact to already exist in S3."
+  type        = bool
+  default     = false
+}
+
+# Only read when enable_sagemaker_endpoint is true. No sensible default: an
+# XGBoost framework image URI is region- and version-specific, and getting it
+# wrong fails the apply rather than silently deploying the wrong container.
+# Look it up with:
+#   aws sagemaker list-training-jobs (from a completed job) — the container
+#   image used is in DescribeTrainingJob's AlgorithmSpecification.
+variable "sagemaker_xgboost_image_uri" {
+  description = "ECR image URI for the SageMaker-managed XGBoost inference container. Required only if enable_sagemaker_endpoint is true."
+  type        = string
+  default     = ""
+}
+
+# S3 URI of the model.tar.gz an approved model package points to. Copy from
+# `aws sagemaker describe-model-package` after launch_training_job.py's
+# .register() call, once you've reviewed and approved the package.
+variable "sagemaker_model_data_url" {
+  description = "S3 URI of the trained model.tar.gz. Required only if enable_sagemaker_endpoint is true."
+  type        = string
+  default     = ""
 }
 
 # ── Budget anchor ──────────────────────────────────────────────────────

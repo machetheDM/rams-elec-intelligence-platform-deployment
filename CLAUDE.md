@@ -37,7 +37,7 @@ referenced publicly on LinkedIn and shown to recruiters.
 2. **A DevSecOps/coursework overlay** — ECCU510 (Secure Programming) and ECCU524 (Cloud Security):
    security audit, hardening middleware, CI security pipeline, Azure Terraform, runbooks.
 
-**Careful — "Module" is overloaded.** Product modules 1–10 (README table) are NOT the same as
+**Careful — "Module" is overloaded.** Product modules 1–11 (README table) are NOT the same as
 SecureDevOps modules 1–5. Product Module 3 = AI Triage Engine; SecureDevOps Module 3 = CI/CD.
 
 ---
@@ -138,6 +138,12 @@ Concretely, things that have been deliberately *refused*:
 is **Module 11, intended to actually run**. Do not blur these, and do not add AWS resources
 to the Azure root. `cd terraform/aws` first.
 
+**AWS region** — standardised on **`af-south-1`** (Cape Town). This is an opt-in region —
+enable it in the AWS console before the first apply. The hardcoded default in `variables.tf`,
+`.env.example`, all `boto3` clients (`os.getenv("AWS_REGION", "af-south-1")`), and
+`.github/workflows/sagemaker-train.yml` all agree. Do not introduce `eu-west-1` as a new
+default — a Lambda in one region reading SSM in another fails at cold start.
+
 **Frontend** — strict separation so UI can be redesigned (v0.dev) without touching logic.
 - `src/lib/api/*.ts` = data fetching, no React. `src/hooks/*.ts` = headless state, zero markup.
   `src/components/**` = presentation only.
@@ -218,33 +224,53 @@ is often taken by another project's `community-ride-db` — our postgres then fa
 
 ---
 
-## State as of 2026-07-26
+## State as of 2026-09-06
 
-**On `main` (`8087630`):** structural fixes, security hardening across all services, XGBoost quote
-estimator (**MAE R11,280.65 · R² 0.5121 · CV MAE R10,393.38**, 108/27 split, synthetic data), the
-landing page, CrewAI crew (PR #12), and Module 10 + testimonials + alert signup + the Docker
-healthcheck fix (PR #13). CI green on both pipelines.
+**On `main` (`8087630`, unchanged since 2026-07-26):** structural fixes, security hardening
+across all services, XGBoost quote estimator (**MAE R11,280.65 · R² 0.5121 · CV MAE
+R10,393.38**, 108/27 split, synthetic data), the landing page, CrewAI crew (PR #12), and
+Module 10 + testimonials + alert signup + the Docker healthcheck fix (PR #13). CI green on
+both pipelines.
 
-**Open:**
+**Four open PRs (#14–#17), none merged.** See `docs/devin-handover.md` §2.1 for the full
+topology. Suggested merge order: #15 → rebase #17 → #16. Merging is the user's call.
+
+**AWS Vendor Upgrade (Phases 0–3) on branch `feat/module-11-lambda`:**
+Plan committed at `docs/aws-vendor-upgrade-plan.md`. Phases built:
+- **Phase 0** (S3 Gold Parquet + Glue Crawler/Catalog): `glue.tf`, `etl/loaders/s3_loader.py`,
+  DAG updated.
+- **Phase 1** (SageMaker Training + Registry + Serverless Inference):
+  `sagemaker.tf`, `services/triage/sagemaker/`, `MODEL_BACKEND` switch in `main.py`,
+  `.github/workflows/sagemaker-train.yml`. Endpoint gated behind
+  `enable_sagemaker_endpoint = false`.
+- **Phase 2** (Textract fallback): `etl/extractors/textract.py`, `pdf.py` updated.
+- **Phase 3** (Bedrock as second CrewAI backend): `agents.py` accepts `bedrock/<id>`,
+  `benchmark_bedrock.py` ready. **Comparison doc not yet generated** (needs real Bedrock
+  credentials).
+- **Phases 4–5** not started (Streamlit-on-Athena, streaming + champion-challenger).
+
+**Region reconciled to `af-south-1`** across all hardcoded defaults (`variables.tf`,
+`.env.example`, all boto3 clients, `.github/workflows/sagemaker-train.yml`). af-south-1 is
+an opt-in region — enable it in the AWS console before the first apply.
+
+**Module 11 (AWS) — still never applied. No AWS account has been touched.**
+`terraform/aws/` now defines budgets ($8/mo ceiling), the sentiment Lambda + Function URL,
+the artifacts bucket, Glue Catalog/Crawler, SageMaker Model Registry + gated Serverless
+Inference, and least-privilege IAM roles. Every billable resource carries
+`depends_on = [aws_budgets_budget.monthly_cost]`.
+Terraform deliberately does **not** create the SSM parameters: a value passed through
+Terraform lands in state in plaintext. `groq_api_key` and `api_key_hashes` are created
+out of band with `aws ssm put-parameter --type SecureString`, before the first apply.
+
+**Still open:**
 - **Module 10 migration written but NOT applied**:
   `packages/db/prisma/migrations/20260726000000_followup_agent/` → `npx prisma migrate deploy`.
 - **Module 10 Parts E (ML) and F (dashboard page)** deferred until follow-up data exists.
-- **Module 11 (AWS)** — written, **never applied. No AWS account has been touched.**
-  `terraform/aws/` now defines budgets, the sentiment Lambda + Function URL, the artifacts
-  bucket, and a least-privilege execution role. ~$5/mo ceiling.
-  Every billable resource carries `depends_on = [aws_budgets_budget.monthly_cost]` — keep
-  that up on anything added.
-  Terraform deliberately does **not** create the SSM parameters: a value passed through
-  Terraform lands in state in plaintext. `groq_api_key` and `api_key_hashes` are created
-  out of band with `aws ssm put-parameter --type SecureString`, before the first apply.
-  Remaining: upload triage artifacts to the bucket, point n8n at the Function URL.
-- **`terraform/` (Azure) has never been run through `terraform validate`.** The new
-  `terraform-aws` CI job deliberately excludes it so it fails on changed code, not on
-  pre-existing issues. Validating it is its own task — expect real errors (e.g.
-  `azurerm_postgresql_flexible_server.delegated_zone_id` looks like it should be
-  `delegated_subnet_id`; unverified).
-- **GitHub Dependency Review fails** on every PR — repo setting, not code. Enable Dependency graph
-  in Settings → Code security.
+- **Two coexisting SSM path schemes** in `terraform/aws/main.tf` — needs its own change.
+- **`terraform/` (Azure) has never been run through `terraform validate`.** PR #16 addresses
+  7 real errors; the `terraform-aws` CI job deliberately excludes it.
+- **`docs/benchmarks/bedrock-vs-groq.md` does not exist yet** — generated by running
+  `benchmark_bedrock.py` with real Bedrock credentials.
 - **v0.dev credits (~$4)** unspent; `HeroSection` and `SecurityTrustSection` untouched by v0.
 - Three untracked scratch files (`create_project.graphql`, `proj_id.txt`, `project_columns.json`)
   are leftover GitHub Projects tooling — safe to delete or gitignore.

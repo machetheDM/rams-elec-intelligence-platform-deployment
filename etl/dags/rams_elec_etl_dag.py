@@ -28,6 +28,7 @@ from transformers.bronze import BronzeTransformer
 from transformers.silver import SilverTransformer
 from transformers.gold import GoldTransformer
 from loaders.postgres_loader import PostgresLoader
+from loaders.s3_loader import S3GoldLoader
 
 default_args = {
     "owner": "ramsatelec",
@@ -206,12 +207,20 @@ with DAG(
             job_count = loader._upsert_jobs(silver_df)
             print(f"Upserted {cust_count} customers, {job_count} jobs")
 
-        # Load Gold data
+        # Load Gold data — Postgres (source of truth) and S3 (data lake for
+        # SageMaker/Athena) in parallel. The S3 write is additive: if the
+        # bucket isn't configured (e.g. a laptop run with no AWS credentials),
+        # S3GoldLoader reports "skipped" rather than failing the task, so this
+        # never blocks the pipeline that existed before it.
         gold_data = ti.xcom_pull(key="gold_data", task_ids="transform_gold")
         if gold_data:
             gold_df = pd.DataFrame.from_dict(gold_data)
             result = loader.load_gold_data(gold_df)
-            print(f"Gold load result: {result}")
+            print(f"Gold load result (Postgres): {result}")
+
+            s3_loader = S3GoldLoader()
+            s3_result = s3_loader.load(gold_df, run_id=context["run_id"])
+            print(f"Gold load result (S3): {s3_result}")
 
         loader.close()
 

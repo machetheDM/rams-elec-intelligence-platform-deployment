@@ -56,6 +56,31 @@ output "ssm_config_path" {
   value       = local.ssm_config_path
 }
 
+output "gold_glue_database" {
+  description = "Glue Data Catalog database Athena queries against for the Gold feature tables."
+  value       = aws_glue_catalog_database.gold.name
+}
+
+output "gold_glue_crawler" {
+  description = "Crawler name — run with `aws glue start-crawler --name <this>` after a new S3 write, since it is on-demand only."
+  value       = aws_glue_crawler.gold.name
+}
+
+output "sagemaker_execution_role_arn" {
+  description = "Role ARN launch_training_job.py passes as --role-arn."
+  value       = aws_iam_role.sagemaker_execution.arn
+}
+
+output "sagemaker_model_package_group" {
+  description = "Model Registry group launch_training_job.py registers approved models into."
+  value       = aws_sagemaker_model_package_group.quote_estimator.model_package_group_name
+}
+
+output "sagemaker_endpoint_name" {
+  description = "Serverless Inference endpoint name, if enable_sagemaker_endpoint is true. Empty otherwise."
+  value       = var.enable_sagemaker_endpoint ? aws_sagemaker_endpoint.quote_estimator[0].name : ""
+}
+
 output "guardrail_warning" {
   description = "What the budgets do and do not do."
   value       = "AWS Budgets alerts on spend; it does not cap it. An alert is a signal to go and destroy something, not a limit that will stop the charge."

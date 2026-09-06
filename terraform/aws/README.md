@@ -43,24 +43,39 @@ fails — deliberately. Generate a key and its hash with the command in `.env.ex
 
 | Resource | Purpose | Cost |
 |---|---|---|
-| 2 × `aws_budgets_budget` | $5/month ceiling, $1/day tripwire | free |
+| 2 × `aws_budgets_budget` | $8/month ceiling, $1/day tripwire | free |
 | `aws_lambda_function` + Function URL | sentiment service, public HTTPS | free tier |
 | `aws_cloudwatch_log_group` | 14-day retention, set explicitly | pennies |
-| `aws_s3_bucket` | triage model artifacts, private + versioned | ~$0.12/mo |
-| `aws_iam_role` + inline policy | least-privilege execution role | free |
+| `aws_s3_bucket` | triage model artifacts + Gold Parquet, private + versioned | ~$0.12/mo |
+| `aws_iam_role` + inline policy | least-privilege execution role (Lambda) | free |
+| `aws_glue_catalog_database` + `aws_glue_crawler` (`glue.tf`) | catalogs the Gold Parquet under `gold_jobs`, on-demand only — no schedule | ~$0.01–0.05/run |
+| `aws_iam_role` + inline policy (`glue.tf`) | least-privilege execution role (Glue Crawler) | free |
+| `aws_sagemaker_model_package_group` (`sagemaker.tf`) | Model Registry group `launch_training_job.py` registers into | free |
+| `aws_iam_role` + inline policy (`sagemaker.tf`) | least-privilege execution role (training + hosting) | free |
+| `aws_sagemaker_model`/`endpoint_configuration`/`endpoint` (`sagemaker.tf`) | Serverless Inference — **gated behind `enable_sagemaker_endpoint`, default `false`** | $0 while `false`; pay-per-invocation once enabled |
+
+Training jobs themselves are not a Terraform resource — `launch_training_job.py`
+submits them imperatively (ml.m5.large, a few minutes, ≈ cents per run) using the
+`sagemaker_execution_role_arn` output above.
 
 **Terraform does not create the SSM parameters.** See "Secrets".
+
+**The Glue Crawler does not run on a schedule.** It has to be started manually
+(`aws glue start-crawler --name rams-elec-gold-crawler`) or from a CI step
+after the ETL pipeline writes new Gold data to S3 — see `etl/loaders/s3_loader.py`.
+A scheduled crawler is the standard way this line item quietly grows a bill;
+there's no scheduled ingestion here yet for it to keep up with.
 
 ## What the budgets do
 
 | Budget | Limit | Fires on |
 |---|---|---|
-| `rams-elec-monthly-ceiling` | `$5`/month | actual spend at 50%, 80%, 100%; **forecast** at 100% |
+| `rams-elec-monthly-ceiling` | `$8`/month | actual spend at 50%, 80%, 100%; **forecast** at 100% |
 | `rams-elec-daily-tripwire` | `$1`/day | actual spend in a single day |
 
 The forecast alert is the one that matters — it fires on trajectory, days before the money
-is gone. The daily tripwire covers the shape the monthly budget is blind to: $5 spread over
-a month and $5 burned in an afternoon trip the monthly alert at the same moment, but only
+is gone. The daily tripwire covers the shape the monthly budget is blind to: $8 spread over
+a month and $8 burned in an afternoon trip the monthly alert at the same moment, but only
 one of them is still recoverable.
 
 **Budgets alert; they do not cap.** Nothing here will stop a charge. An alert is a signal
@@ -112,4 +127,10 @@ The $5 ceiling is enforced by design decisions, not only by the alerts:
 - Upload the triage artifacts (`*.pkl`, `metrics.json`) to the bucket and have the triage
   service read from S3 when running outside Docker
 - Point the n8n follow-up workflow at the Function URL
+- Run `services/triage/sagemaker/launch_training_job.py --role-arn <sagemaker_execution_role_arn> --wait`,
+  approve the resulting model package, then set `sagemaker_model_data_url`,
+  `sagemaker_xgboost_image_uri`, and `enable_sagemaker_endpoint = true` to deploy
+  the Serverless Inference endpoint
+- Set `MODEL_BACKEND=sagemaker` on the triage service once the endpoint above exists,
+  to actually start using it instead of the local model
 - Nothing here has been applied yet — the first `terraform apply` is still pending

@@ -75,13 +75,16 @@ def reset_sanitisation_log() -> None:
     SANITISED_OUTPUTS.clear()
 
 
-def build_triage_crew() -> Crew | None:
+def build_triage_crew(model: str | None = None) -> Crew | None:
     """Build the triage crew, or None if no LLM is available.
 
     Returns None rather than raising so main.py can answer with a clean 503
-    when GROQ_API_KEY is absent, matching how triage and chatbot degrade.
+    when no credentials are configured, matching how triage and chatbot
+    degrade. `model` overrides CREW_MODEL for this build only — see
+    agents.build_llm()'s docstring; benchmark_bedrock.py is the caller that
+    uses this.
     """
-    llm = build_llm()
+    llm = build_llm(model)
     if llm is None:
         return None
 

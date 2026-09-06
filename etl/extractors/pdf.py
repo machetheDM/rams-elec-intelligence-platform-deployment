@@ -5,11 +5,14 @@ Extracts structured fields from PDF job cards using pdfplumber.
 Handles typical SA electrical/refrigeration job card layouts.
 """
 
+import logging
 import pdfplumber
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger("etl.extractors.pdf")
 
 
 class PDFExtractor:
@@ -87,11 +90,19 @@ class PDFExtractor:
         except ValueError:
             return None
 
-    def extract(self, file_path: str) -> dict:
+    def extract(self, file_path: str, use_textract_fallback: bool = False) -> dict:
         """Extract job card fields from a PDF file.
 
         Args:
             file_path: Path to PDF job card
+            use_textract_fallback: If pdfplumber's regex extraction comes
+                back "empty" (no text layer — a scan) or "failed" (text
+                found, but no expected field matched — usually destroyed
+                layout), retry with AWS Textract's form-aware OCR instead of
+                giving up. Off by default: Textract costs real money per
+                call, and most job cards in this pipeline are typed PDFs
+                that pdfplumber handles fine. See extractors/textract.py's
+                module docstring for the single-page limitation.
 
         Returns:
             Dictionary of extracted fields with source metadata
@@ -106,13 +117,16 @@ class PDFExtractor:
                     full_text += text + "\n"
 
         if not full_text.strip():
-            return {
+            result = {
                 "_source_file": path.name,
                 "_source_type": "pdf",
                 "_ingested_at": datetime.now().isoformat(),
                 "_extraction_status": "empty",
                 "_error": "No text extracted from PDF",
             }
+            return self._maybe_textract_fallback(
+                file_path, result, use_textract_fallback
+            )
 
         result = {
             "_source_file": path.name,
@@ -142,13 +156,63 @@ class PDFExtractor:
         elif len(found) == 0:
             result["_extraction_status"] = "failed"
 
-        return result
+        return self._maybe_textract_fallback(file_path, result, use_textract_fallback)
 
-    def extract_batch(self, directory: str) -> list[dict]:
+    @staticmethod
+    def _maybe_textract_fallback(
+        file_path: str, pdfplumber_result: dict, use_textract_fallback: bool
+    ) -> dict:
+        """If pdfplumber came back "empty" or "failed" and the caller opted
+        in, retry with Textract and return whichever result actually found
+        the expected fields.
+
+        The pdfplumber result is kept as a base and Textract's fields
+        layered on top — not replaced outright — so a partial pdfplumber
+        match (e.g. it found customer_name but not job_date) survives even
+        if Textract's form detection misses that same field under a
+        differently-worded key.
+        """
+        if not use_textract_fallback or pdfplumber_result["_extraction_status"] not in (
+            "empty",
+            "failed",
+        ):
+            return pdfplumber_result
+
+        # Imported here, not at module top — this is the one path that
+        # needs boto3 and AWS credentials, and most runs of this extractor
+        # never take it. Relative import, matching extractors/__init__.py's
+        # convention — this module is always loaded as part of the
+        # `extractors` package (see rams_elec_etl_dag.py's
+        # `from extractors.pdf import PDFExtractor`), never standalone.
+        from .textract import TextractExtractor
+
+        logger.info(
+            f"pdfplumber status='{pdfplumber_result['_extraction_status']}' for "
+            f"{pdfplumber_result['_source_file']} — retrying with Textract"
+        )
+        textract_result = TextractExtractor().extract(file_path)
+
+        merged = {
+            **pdfplumber_result,
+            **{k: v for k, v in textract_result.items() if v not in (None, "")},
+        }
+        # Whichever attempt found more of the expected fields wins the
+        # reported status — merging fields but keeping pdfplumber's "failed"
+        # status when Textract also failed would misreport a record that is
+        # in fact still unusable.
+        merged["_extraction_status"] = textract_result.get(
+            "_extraction_status", pdfplumber_result["_extraction_status"]
+        )
+        return merged
+
+    def extract_batch(
+        self, directory: str, use_textract_fallback: bool = False
+    ) -> list[dict]:
         """Extract all PDFs in a directory.
 
         Args:
             directory: Path to directory containing PDF job cards
+            use_textract_fallback: See extract()'s docstring.
 
         Returns:
             List of extracted field dictionaries
@@ -157,7 +221,9 @@ class PDFExtractor:
         pdf_dir = Path(directory)
         for pdf_file in pdf_dir.glob("*.pdf"):
             try:
-                result = self.extract(str(pdf_file))
+                result = self.extract(
+                    str(pdf_file), use_textract_fallback=use_textract_fallback
+                )
                 results.append(result)
             except Exception as e:
                 results.append(
