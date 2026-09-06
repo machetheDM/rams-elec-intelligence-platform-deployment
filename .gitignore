@@ -135,6 +135,12 @@ prisma/migrations/*/migration_lock.toml
 n8n/nodes/
 n8n/credentials/
 
+# --- Scratch / tooling ---
+create_project.graphql
+proj_id.txt
+project_columns.json
+pr-body.md
+
 # --- Misc ---
 *.tmp
 *.temp
