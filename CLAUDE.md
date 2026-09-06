@@ -257,7 +257,7 @@ is often taken by another project's `community-ride-db` — our postgres then fa
 
 ---
 
-## State as of 2026-09-06
+## State as of 2026-09-07
 
 **On `main`.** All PRs merged (#14 closed as superseded, #15–#17 squash-merged).
 main now includes everything: security hardening, XGBoost quote estimator (**MAE R11,280.65 ·
@@ -265,7 +265,7 @@ R² 0.5121 · CV MAE R10,393.38**, 108/27 split, synthetic data), the landing pa
 Module 10, AWS Vendor Upgrade Phases 0–3, follow-up Lambda + EventBridge, the Azure
 Terraform validation fix, and all frontend pages. Zero open PRs.
 
-**Frontend complete (35 routes, build passes):**
+**Frontend complete (37 routes, build passes):**
 - Public: `/` (landing), `/services`, `/inquire`, `/login`
 - Portal: `/dashboard`, `/equipment`, `/service-history`, `/compliance`, `/chatbot`
 - Admin: `/admin/jobs` (Kanban board), `/admin/analytics` (6-page Recharts dashboard)
@@ -298,10 +298,20 @@ carries `depends_on = [aws_budgets_budget.monthly_cost]`.
 **Azure Terraform** — now validated in CI (`terraform-azure` job). Seven issues fixed. Still
 designed-never-provisioned.
 
+**Module 10 Parts E & F now implemented:**
+- **Part F** — Follow-up analytics page at `/admin/analytics/followups` with sentiment
+  distribution, satisfaction ratings, theme breakdown, response rate, recurrence rate,
+  monthly volume, and ML readiness banner (7 KPIs + 4 charts).
+- **Part E** — Failure-recurrence model scaffold at `ml/training/`:
+  `train_recurrence.py` (XGBoost classifier, 100-record training gate, 5-fold CV),
+  `score_equipment.py` (writes `risk_score` back to equipment table).
+  The model will not train below 100 labelled follow-ups — it writes a skip-marker instead.
+- `npx prisma generate` re-run so the Prisma client includes `FollowUp`.
+
 **Still open:**
 - **Module 10 migration written but NOT applied**:
   `packages/db/prisma/migrations/20260726000000_followup_agent/` → `npx prisma migrate deploy`.
-- **Module 10 Parts E (ML) and F (dashboard page)** deferred until follow-up data exists.
+- **Module 10 ML model** requires a running Postgres with 100+ labelled follow-ups to train.
 - **Two coexisting SSM path schemes** in `terraform/aws/main.tf` — needs its own change.
 - **`docs/benchmarks/bedrock-vs-groq.md` does not exist yet** — needs real Bedrock credentials.
 - **Dependabot security updates are disabled** — enable in Settings → Code security.
