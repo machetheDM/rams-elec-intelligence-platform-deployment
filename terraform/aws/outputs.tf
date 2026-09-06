@@ -85,3 +85,28 @@ output "guardrail_warning" {
   description = "What the budgets do and do not do."
   value       = "AWS Budgets alerts on spend; it does not cap it. An alert is a signal to go and destroy something, not a limit that will stop the charge."
 }
+
+# ── Module 11 Phase 1: follow-up Lambda ────────────────────────────────
+
+output "followup_lambda_name" {
+  description = "Follow-up trigger function name (for `aws lambda invoke` during verification)"
+  value       = aws_lambda_function.followup_trigger.function_name
+}
+
+output "followup_schedule_name" {
+  description = "EventBridge schedule name — disable with `aws scheduler update-schedule --state DISABLED`"
+  value       = aws_scheduler_schedule.followup_trigger.name
+}
+
+output "followup_log_group" {
+  description = "CloudWatch log group for the follow-up Lambda"
+  value       = aws_cloudwatch_log_group.followup_lambda.name
+}
+
+output "followup_parameters_to_populate" {
+  description = "SSM parameters created empty. Set real values out of band before the first scheduled run — Terraform deliberately never holds them."
+  value = [
+    aws_ssm_parameter.database_url.name,
+    aws_ssm_parameter.n8n_webhook_url.name,
+  ]
+}

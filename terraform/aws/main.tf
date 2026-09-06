@@ -25,6 +25,11 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.60"
     }
+    # Builds the Lambda deployment zip from lambda/followup_trigger/build/.
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
+    }
   }
 
   # State is local by default. That is a deliberate choice for a single-operator
@@ -73,6 +78,23 @@ locals {
   # from the segment after the final "/", and the IAM policy appends "*" to this
   # to scope GetParametersByPath.
   ssm_config_path = "/rams-elec/sentiment/"
+
+  # Every SSM parameter this project owns hangs off one prefix, so an IAM
+  # policy can be scoped by path and the environments never collide.
+  param_prefix = "/rams-elec/${var.environment}"
+
+  # KNOWN INCONSISTENCY — the two paths above use different schemes:
+  # ssm_config_path is service-scoped with no environment segment, while
+  # param_prefix is environment-scoped with no service segment. They arrived
+  # from two branches built in parallel (sentiment Lambda, follow-up Lambda)
+  # and both are referenced, so neither can simply be deleted.
+  #
+  # The target shape is /rams-elec/<env>/<service>/. Unifying is deliberately
+  # NOT done here: sentiment's lambda_handler.py derives its environment
+  # variable names from the segment after the final "/", so changing the path
+  # silently changes which variables it looks for. That is a change that needs
+  # its own test run, not a merge-conflict resolution. Tracked in CLAUDE.md.
+
 
   common_tags = {
     Project     = "Rams @Elec Intelligence Platform"

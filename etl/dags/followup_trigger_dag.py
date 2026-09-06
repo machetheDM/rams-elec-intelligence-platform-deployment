@@ -1,5 +1,34 @@
 """
-Airflow DAG: Post-Service Follow-up Trigger (Module 10)
+Airflow DAG: Post-Service Follow-up Trigger (Module 10) — SUPERSEDED, PAUSED
+
+    Replaced by lambda/followup_trigger/handler.py (Module 11 Phase 1).
+    This DAG is retained for reference and for local development without AWS,
+    and ships PAUSED so the two can never both run.
+
+Why it is paused rather than deleted
+------------------------------------
+Both this and the Lambda select on `NOT EXISTS (SELECT 1 FROM follow_ups ...)`,
+so if both ran they would mostly not double-message — but "mostly" is doing real
+work in that sentence. Two schedulers racing the same SELECT can both see a job
+as due before either inserts, and the customer gets two WhatsApp messages. A
+paused DAG cannot race anything.
+
+It also has a bug the Lambda fixes; see below.
+
+    KNOWN BUG (unfixed here, fixed in the Lambda)
+    ---------------------------------------------
+    create_followup_records commits every row, then trigger_n8n_webhook
+    dispatches and swallows failures so one bad send cannot fail the run. The
+    docstring below claims "a later run or a manual replay can pick them up".
+    Nothing does. Because find_due_jobs excludes any job that already has a
+    follow_ups row, a committed row whose webhook failed permanently removes
+    that customer from selection: they are never messaged, and the row is
+    indistinguishable from a customer who simply did not reply.
+
+    The Lambda puts the webhook call inside the per-job transaction, so a
+    dispatch failure rolls the row back and the job is retried the next day.
+
+    If this DAG is ever unpaused, that bug is live again.
 
 Schedule: daily.
 Tasks: find_due_jobs → create_followup_records → trigger_n8n_webhook
@@ -62,7 +91,11 @@ with DAG(
     schedule_interval="0 9 * * *",  # 09:00 daily — civil hour for a customer message
     start_date=datetime(2026, 7, 1),
     catchup=False,
-    tags=["ramsatelec", "followup", "module10"],
+    # Superseded by the Lambda. Ships paused so a fresh Airflow install cannot
+    # start racing the Lambda for the same jobs. Unpausing re-introduces the
+    # dispatch-failure bug documented in the module docstring.
+    is_paused_upon_creation=True,
+    tags=["ramsatelec", "followup", "module10", "superseded-by-lambda"],
 ) as dag:
 
     def find_due_jobs(**context):
