@@ -85,7 +85,7 @@ graph TB
 | 6 | Analytics Dashboard | 6-page Streamlit dashboard | ⏳ Pending |
 | 7 | Dispatch & Job Assignment | Skillset-based technician matching + admin Kanban board | ✅ Complete |
 | 8 | Public Frontend Upgrade | Next.js 15 responsive dark-mode site — all public pages + API proxy routes | ✅ Complete |
-| 9 | Integration Testing & Deployment | Docker Compose + CI + Vercel/Railway | 🔄 In Progress |
+| 9 | Integration Testing & Deployment | Docker Compose (13 containers) + CI (11-job pipeline) + Vercel config + integration test script | ✅ Complete |
 | 10 | Post-Service Follow-up Agent | Airflow trigger DAG + POPIA consent gate + sentiment service. WhatsApp flow designed, not provisioned; failure-recurrence model awaiting data | 🔄 In Progress |
 
 ## Module Overview

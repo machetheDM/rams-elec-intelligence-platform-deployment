@@ -207,17 +207,13 @@ services:
       - "3000:3000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/rams_elec
-      - NEXT_PUBLIC_TRIAGE_API_URL=http://triage:8001
-      - NEXT_PUBLIC_LOADSHEDDING_API_URL=http://loadshedding:8002
-      - NEXT_PUBLIC_CHATBOT_API_URL=http://chatbot:8003
-      - NEXT_PUBLIC_DISPATCH_API_URL=http://dispatch:8004
-      # Server-side only (no NEXT_PUBLIC_ prefix) — used by
-      # frontend/src/app/api/model-metrics/route.ts and
-      # frontend/src/app/api/chatbot/route.ts to call backend services
-      # without exposing the internal API key to the browser.
+      # Server-side only (no NEXT_PUBLIC_ prefix) — browser calls go through
+      # same-origin proxy routes in src/app/api/*/route.ts, which hold the
+      # internal API key and forward requests to the backend services.
       - TRIAGE_SERVICE_URL=http://triage:8001
       - CHATBOT_SERVICE_URL=http://chatbot:8003
       - LOADSHEDDING_SERVICE_URL=http://loadshedding:8002
+      - DISPATCH_SERVICE_URL=http://dispatch:8004
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-rams-elec-frontend-2026}
     depends_on:
       triage:
