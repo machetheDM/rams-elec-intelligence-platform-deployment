@@ -293,6 +293,7 @@ someone else) no longer depends on reconstructing intent from the diff.
 
 ---
 
+
 ## Module 11 (AWS): the two things that had to happen before any deployment — 2026-07-26
 
 Module 11 puts the sentiment service on a Lambda Function URL. A Function URL is a public
@@ -572,3 +573,94 @@ worse — the note cost more effort than the toggle.
 **Fix it or delete it.** A check nobody can act on should not be in the pipeline. Either
 outcome would have been better than the one we had; the one thing that must not happen is
 learning to read past a red mark.
+
+---
+
+## Fix: the Azure Terraform module had never been type-checked — 2026-07-30
+
+`terraform/*.tf` (main, variables, outputs, security) is the ECCU524 cloud-security architecture:
+deliberately designed and never provisioned. Because it is never applied, it had also never been
+run through any tool — no `fmt`, no `validate`, ever. PR #14 added a `terraform-aws` job scoped to
+`terraform/aws/` only, explicitly excluding this root so CI would fail on changed code rather than
+on whatever was already latent here. This closes that thread.
+
+`terraform` is not installed on the dev machine, so before opening the PR I verified what could be
+verified locally: an HCL parse of all four files with `python-hcl2`, an alignment checker
+approximating `terraform fmt`, and a script that extracted all 151 argument and block identifiers
+and checked each against the azurerm **v4.81.0** documentation (the version `~> 4.0` resolves to).
+That turned a guess-and-push loop into one CI run.
+
+### What was actually broken
+
+Four hard `validate` errors, one deprecation, and two things `validate` cannot catch:
+
+| Where | Problem |
+|---|---|
+| `main.tf` | `delegated_zone_id` — **not an azurerm argument at all**. Correct: `delegated_subnet_id` |
+| `security.tf` ×2 | `log` / `metric` / `retention_policy` blocks on `azurerm_monitor_diagnostic_setting` were **removed in azurerm 4.0** |
+| `security.tf` | `rate_limit_duration_in_min = 1` — no such argument; it is `rate_limit_duration`, an enum (`OneMin`) |
+| `security.tf` | `setting_name = "SENTINEL"` — the enum value is case-sensitive `Sentinel` |
+| `main.tf` | `enable_rbac_authorization` deprecated → `rbac_authorization_enabled` (removed in provider v5) |
+| `main.tf` | `delegated_subnet_id` requires `private_dns_zone_id`; no private DNS zone existed anywhere |
+| `main.tf` | `password_auth_enabled = false` while also setting `administrator_login` — mutually exclusive |
+
+The `delegated_zone_id` line was the known suspect and it was real. The diagnostic-settings breakage
+was larger: two resources, four blocks, all silently invalid since the provider went to 4.x.
+
+### The contradiction worth dwelling on
+
+The PostgreSQL server declared `password_auth_enabled = false` *and* an `administrator_login` fed by
+a generated `random_password`, which was then stored in Key Vault. The provider refuses an
+`administrator_login` unless password auth is enabled, so this could never have applied — but
+`validate` does not catch it, because it is enforced in the provider's create function, not the
+schema. It would only have surfaced on a `plan` against a real subscription, which is exactly what
+a designed-never-provisioned module never gets.
+
+Two coherent ways out: enable password auth, or commit to Entra ID only. I went with Entra ID only,
+because `terraform/README.md` already claims "Managed Identity (not passwords) — no hardcoded
+credentials" in its security-decisions table. When code and documented security posture disagree,
+changing the code keeps the claim true; editing the README to match broken code weakens a real
+claim to accommodate a bug. So `administrator_login`, `administrator_password`, the
+`random_password`, the Key Vault secret holding it, the now-dead `db_admin_username` variable, and
+the `random` provider requirement are all gone, and `authentication.tenant_id` was added (required
+whenever AAD auth is on).
+
+The removed Key Vault secret is worth a note: it could not have applied either. The vault sets
+`default_action = "Deny"` with RBAC authorization and no role assignment for the Terraform
+principal, so writing a secret into it would have failed on network ACL and again on authorization.
+Deleting it removed a second latent apply failure rather than losing working functionality.
+
+Retention also moved. azurerm 4.0 deleted the per-diagnostic-setting `retention_policy` block, and
+the README's "90-day log retention → POPIA Section 19" row depended on it. Retention is now a
+property of the Log Analytics workspace, which was already set to 90 days — so the claim still
+holds, but it now holds in one place instead of three, and `main.tf` says so in a comment.
+
+### CI
+
+Added a `terraform-azure` job rather than widening `terraform-aws` to both roots. PR #14 is still
+open, so the two changes were written against `main` independently; separate jobs at different
+points in the file merge cleanly in either order, whereas editing #14's job would have forced a
+merge order. The job is `fmt -check -recursive` → `init -backend=false` → `validate`, matching #14's
+shape, and is wired into `security-gate`.
+
+One deliberate asymmetry: `fmt -recursive` from `terraform/` descends into `terraform/aws/` too.
+That is redundant with #14's job but leaves no `.tf` file under `terraform/` unchecked.
+
+### Lessons learned
+
+**"Never run" quietly means "never checked."** The whole justification for not validating this
+module was that it is never applied — which is precisely why nothing ever told us it was wrong. Five
+errors accumulated in a directory that is public portfolio evidence, one of which (`delegated_zone_id`)
+would have failed on the first command any reviewer typed. Cost to close: one CI job.
+
+**This is the silent no-op again, at the level of a whole directory.** The first three instances were
+a query matching zero rows, an UPDATE ignoring `rowcount`, and a healthcheck binary that did not
+exist. This is the fourth: a module that reported nothing because nothing ever asked it. Same shape
+— no failure signal, because there was no check.
+
+**Validated is not deployed, and the README now says so in a table.** Making this module type-check
+creates a real temptation to describe it as verified infrastructure. `validate` proves the HCL
+matches the provider schema offline; it proves nothing about quotas, globally-unique name
+collisions, regional SKU availability, or RBAC. `terraform/README.md` now states exactly which
+claims CI supports and which it does not, so the next session cannot honestly upgrade the wording.
+

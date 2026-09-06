@@ -162,12 +162,43 @@ jobs:
       - run: docker build -f docker/Dockerfile.airflow -t rams-elec-airflow ./etl
 
   # ===========================================================================
+  # Terraform — Azure root module (terraform/*.tf).
+  # ===========================================================================
+  # Validating is NOT deploying. `init -backend=false` downloads only the
+  # provider schema, `validate` type-checks the HCL against it, and neither
+  # contacts Azure, reads credentials, writes state, or costs anything. This
+  # module remains designed-never-provisioned (ECCU524) — see terraform/README.md.
+  #
+  # `terraform` reads only the directory it is invoked from, so this covers the
+  # Azure root; terraform/aws/ has its own job. `fmt -recursive` does descend,
+  # which is deliberate: no .tf file under terraform/ escapes a format check.
+  #
+  # The provider is pinned `~> 4.0` with no committed .terraform.lock.hcl, so
+  # each run resolves the newest 4.x. A future 4.x that tightens validation can
+  # therefore break this job without any local change — that is the tradeoff for
+  # not committing a lock file to a module nobody applies.
+  terraform-azure:
+    name: Validate Terraform (Azure)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+
+  # ===========================================================================
   # Security Gate — must pass before deployment
   # ===========================================================================
   security-gate:
     name: "Security Gate"
     runs-on: ubuntu-latest
-    needs: [lint-python, lint-typescript, test-python, test-crew, terraform-aws, test-nextjs, docker-build]
+    needs: [lint-python, lint-typescript, test-python, test-crew, terraform-aws, terraform-azure, test-nextjs, docker-build]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     steps:
       - name: Security gate check
@@ -183,6 +214,7 @@ jobs:
           echo "  terraform-aws:  ${{ needs.terraform-aws.result }}"
           echo "  test-nextjs:    ${{ needs.test-nextjs.result }}"
           echo "  docker-build:   ${{ needs.docker-build.result }}"
+          echo "  terraform-azure: ${{ needs.terraform-azure.result }}"
           echo ""
           echo "NOTE: Full security scan runs in security.yml workflow."
           echo "Deploy only after security.yml passes with 0 HIGH/CRITICAL findings."
