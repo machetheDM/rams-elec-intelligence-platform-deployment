@@ -331,7 +331,28 @@ designed-never-provisioned.
   The model will not train below 100 labelled follow-ups — it writes a skip-marker instead.
 - `npx prisma generate` re-run so the Prisma client includes `FollowUp`.
 
+**Architecture documents (2026-10-09) — `docs/architecture/`:** written from a read-only pass.
+- `as-built.md` — what runs today (local Compose only), every component tagged
+  WIRED / CONFIGURED / DOCS ONLY with a path, plus what the repo cannot prove.
+- `target-state.md` — AWS `af-south-1`, **all PLANNED**. Two tiers: a **Core** the business
+  would actually need, and a **Practice track** (build once, measure, write up, switch off).
+  Its "Skill lanes" tables map controls to the eleven C|CSE (ECCU524) modules and to
+  data-security, DevSecOps, AI/ML-engineering and data-science lanes.
+- `why.md`, `security-view.md` (secrets by name only), `gaps.md` (66 items in three phases —
+  the one-a-day work list; each has a pass/fail check).
+- Pictures in `img/` are drawn from the Mermaid blocks by `render-diagrams.sh` — edit the
+  block, rerun, commit both.
+- The Core is estimated at $40–70/mo; the Terraform budget ceiling is $8
+  (`terraform/aws/variables.tf:60`). Raise the ceiling on purpose before building Core.
+- The older `README.md`, `data-flow.md`, `database-schema.md` in that folder predate these;
+  `README.md` there still says "Next.js 16", "Vercel Deployed" and Railway/Render. Not true.
+- Designed ≠ deployed applies to every line of the target. Do not blur it.
+
 **Still open:**
+- **16 of 17 frontend API routes have no session check** (no `middleware.ts`; only the
+  NextAuth handler imports `auth`). Portal/admin *pages* are gated in layouts — the data
+  routes behind them are not, including the seven analytics routes that read Postgres.
+  Gap 1 in `docs/architecture/gaps.md`. "Unified auth" is not yet true for the admin APIs.
 - **Module 10 ML model** requires a running Postgres with 100+ labelled follow-ups to train.
 - **Two coexisting SSM path schemes** in `terraform/aws/main.tf` — needs its own change.
 - **`docs/benchmarks/bedrock-vs-groq.md` does not exist yet** — needs real Bedrock credentials.
