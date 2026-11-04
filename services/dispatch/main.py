@@ -74,7 +74,7 @@ apply_security_middleware(
 )
 
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec"
+    "DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/ramsatelec"
 )
 engine = create_engine(DATABASE_URL)
 

@@ -75,7 +75,7 @@ apply_security_middleware(
 ESP_API_KEY = os.getenv("ESKOM_SE_PUSH_API_KEY", "")
 ESP_BASE_URL = "https://developer.sepush.co.za/business/2.0"
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec"
+    "DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/ramsatelec"
 )
 engine = create_engine(DATABASE_URL)
 

@@ -74,7 +74,7 @@ apply_security_middleware(
 # Configuration
 # ---------------------------------------------------------------------------
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec"
+    "DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/ramsatelec"
 )
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "./knowledge_base/faiss_index")
 engine = create_engine(DATABASE_URL)

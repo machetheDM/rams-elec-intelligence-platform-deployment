@@ -52,7 +52,10 @@ if not st.session_state.authenticated:
 # ---------------------------------------------------------------------------
 @st.cache_resource
 def get_engine():
-    db_url = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec")
+    db_url = os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg2://postgres:postgres@localhost:5432/ramsatelec",
+    )
     return create_engine(db_url)
 
 engine = get_engine()

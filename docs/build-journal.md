@@ -664,3 +664,99 @@ matches the provider schema offline; it proves nothing about quotas, globally-un
 collisions, regional SKU availability, or RBAC. `terraform/README.md` now states exactly which
 claims CI supports and which it does not, so the next session cannot honestly upgrade the wording.
 
+---
+
+## CI was red for a month because a dependency's default changed — 2026-11-04
+
+### Symptom
+
+`Rams @Elec CI` had failed on every push to `main` since 2026-10-09. One job of nine,
+`Test Python (pytest + coverage)`, exiting 2 before running a single test:
+
+```
+collected 46 items / 4 errors
+ERROR services/chatbot/test_health.py
+ERROR services/dispatch/test_health.py
+ERROR services/loadshedding/test_health.py
+ERROR services/triage/test_health.py
+  /opt/.../sqlalchemy/dialects/postgresql/psycopg.py:497: in import_dbapi
+      import psycopg
+  E   ModuleNotFoundError: No module named 'psycopg'
+```
+
+The obvious reading — "psycopg is missing from requirements" — is wrong, and acting on it would
+have installed a second Postgres driver the project does not use.
+
+### Cause
+
+`psycopg2-binary` *was* installed, and the log confirms it: `Successfully installed
+... psycopg2-binary-2.9.13 ...`. The missing module is `psycopg`, which is psycopg **v3** — a
+different package.
+
+Nothing in the repo asks for psycopg v3. SQLAlchemy did, on its own:
+
+| SQLAlchemy | `sqlalchemy/dialects/postgresql/__init__.py` |
+|---|---|
+| 2.0.49 | `base.dialect = dialect = psycopg2.dialect` |
+| 2.1.8  | `base.dialect = dialect = psycopg.dialect` |
+
+Verified by reading both wheels rather than trusting the changelog. **SQLAlchemy 2.1 changed
+which DBAPI the bare `postgresql://` scheme resolves to.** Every requirements file said
+`sqlalchemy>=2.0.0`, so the 2026-10-09 CI run picked up 2.1 and `create_engine()` went looking
+for a driver that was never installed. `create_engine` imports the DBAPI eagerly, so this lands
+at module import — which is why pytest died in *collection* and took four unrelated service test
+files with it.
+
+### Why it survived a month
+
+It is invisible locally. This machine holds SQLAlchemy 2.0.49, so `py -3.14 -m pytest` was green
+the whole time — 41 passed, 8 skipped — while `main` was red. An unpinned `>=` range does not
+mean "any version works"; it means "tested on whatever the resolver felt like that day", and the
+laptop and the runner had quietly diverged onto different sides of a breaking change.
+
+The other eight CI jobs stayed green throughout, so the repo looked broadly healthy. That is the
+same shape as the `Dependency Review` entry above: a gate reporting something other than the
+truth about the thing it is supposed to gate.
+
+### Fix
+
+Two halves, deliberately.
+
+**1. Pin `sqlalchemy>=2.0.0,<2.1`** in the six requirements files that carry it. This is what
+actually turns CI green, because CI supplies `DATABASE_URL` from workflow env and no code change
+can reach that string.
+
+**2. Name the driver in every hard-coded default URL** — `postgresql+psycopg2://` across nine
+call sites in `services/`, `etl/`, `ml/` and `dashboard/`. This is not what fixes CI; it removes
+the reliance on a silent default everywhere the repo *does* control the string, so those paths
+survive the pin being lifted later.
+
+`lambda/followup_trigger/handler.py` already did the right thing and was the model for the second
+half — it pins `SQLAlchemy==2.0.36` exactly and rewrites whatever URL it reads to
+`postgresql+pg8000://`, with a comment saying why. That discipline existed in one corner of the
+repo and had never been applied to the services.
+
+### What was deliberately not done
+
+- **Not migrating to psycopg v3.** It is the forward path and it is a real migration — different
+  driver, different connection handling, six services and the ETL to re-verify. Unblocking CI is
+  not the moment. Recorded as an open thread instead of half-done.
+- **Not making `ci.yml`'s `DATABASE_URL` explicit.** It still says bare `postgresql://` on
+  purpose. That keeps CI the canary: if someone lifts the pin without migrating the driver, CI
+  fails rather than only other people's laptops. Fixing the canary would have been the easiest
+  way to make the symptom disappear without fixing anything.
+- **Not bundling the Trivy finding.** The weekly security scan went red on 2026-11-02 with
+  CRITICAL findings in the Airflow image. Unrelated cause, needs its own verification, and a base
+  image bump does not belong in a dependency-pin PR.
+
+### Lessons learned
+
+Fifth instance of the project's signature bug class, and the first where the drifting thing was
+not in the repository at all. The previous four were a wrong string, an unchecked `rowcount`, a
+missing binary, and a disabled repo setting. This one was an upstream library's *default* — code
+that was correct when written and became wrong while nobody edited it.
+
+The practical rule that came out of it: a `>=` range on anything that resolves a driver, a
+backend, or a transport is not a pin, it is a bet that the maintainers will not change their
+default. They are allowed to, and SemVer permits it at a minor bump when the project's own
+compatibility promise scopes it that way.
