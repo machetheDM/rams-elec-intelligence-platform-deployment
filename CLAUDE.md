@@ -106,6 +106,24 @@ Concretely, things that have been deliberately *refused*:
   `ExceptionMiddleware` sits *inside* user middleware, so it surfaces as 500 not 401.
   Return `JSONResponse` directly.
 
+**Database driver — always name it in the URL** (`sqlalchemy`, `psycopg2`)
+- Requirements pin `sqlalchemy>=2.0.0,<2.1`. **SQLAlchemy 2.1 changed the default DBAPI for the
+  bare `postgresql://` scheme from psycopg2 to psycopg (v3)**
+  (`dialects/postgresql/__init__.py`: `base.dialect = dialect = psycopg.dialect`). This repo
+  installs `psycopg2-binary`, not `psycopg`, so under 2.1 every `create_engine()` raises
+  `ModuleNotFoundError: No module named 'psycopg'` — at *import*, so pytest dies during
+  collection, four service test modules at once.
+- `create_engine` imports the DBAPI eagerly, which is why this surfaces at import rather than at
+  first query. The traceback names `sqlalchemy/dialects/postgresql/psycopg.py`, not your code.
+- Every hard-coded default URL is `postgresql+psycopg2://`. `lambda/followup_trigger/handler.py`
+  goes further and rewrites whatever URL it reads to `postgresql+pg8000://`, because its bundle
+  ships pg8000 (pure Python) rather than psycopg2 (compiled, must match the Lambda runtime).
+- `ci.yml` deliberately still sets a **bare** `postgresql://` `DATABASE_URL`. That keeps CI the
+  canary for this class of drift: if the pin is ever lifted without migrating the driver, CI
+  fails rather than only other people's machines.
+- Unpin only after either adding `psycopg[binary]` or making every `DATABASE_URL` explicit —
+  including the ones in `ci.yml`, `docker-compose.yml` and your own shell.
+
 **API keys and `APP_ENV`** (`security/auth/api_key_middleware.py`)
 - Three keys are committed on purpose so `docker compose up` works with no setup:
   `rams-elec-{frontend,airflow,n8n}-2026`. Their SHA-256 hashes are therefore public.
@@ -207,13 +225,21 @@ get verification.
 
 ## Recurring bug class: the silent no-op
 
-Three separate instances found. Look for this pattern:
+Five separate instances found. Look for this pattern — and for its inverted form, where a
+*missing or drifting* configuration succeeds while providing nothing:
 1. `status = "Complete"` vs lowercase `complete` — query matched zero rows, reported success.
 2. `POST /loadshedding/subscribe` ran `UPDATE ... WHERE phone = :phone` and returned
    `{"status":"subscribed"}` regardless of `rowcount`. Now returns `matched`.
 3. Docker healthchecks used `curl`, absent from `python:3.12-slim` and `node:20-alpine`. Probes
    exited −1, every service was permanently `unhealthy`, and `depends_on: service_healthy` could
    never resolve — which *looked* like a startup-ordering problem. Now uses `python -c` / `node -e`.
+4. `Dependency Review` failed on every PR for months because Dependency graph was *off* on the
+   repo — a config error, not a code problem, so it produced no findings while looking like a
+   working gate. Its first real run immediately found the pg8000 CVE.
+5. `sqlalchemy>=2.0.0` was unpinned, so CI silently resolved 2.1 on 2026-10-09 and the
+   `postgresql://` default DBAPI changed under it. Red for a month. **Local stayed green**
+   because this machine happens to hold 2.0.49 — an unpinned range means "tested nowhere in
+   particular".
 
 Also fixed: `SecurityLogger` was instantiated but never called (dead audit logging);
 CSP forbade `unsafe-eval`, killing React Fast Refresh and therefore all hydration in dev
@@ -347,6 +373,11 @@ designed-never-provisioned.
 - The older `README.md`, `data-flow.md`, `database-schema.md` in that folder predate these;
   `README.md` there still says "Next.js 16", "Vercel Deployed" and Railway/Render. Not true.
 - Designed ≠ deployed applies to every line of the target. Do not blur it.
+
+**CI on `main` was red from 2026-10-09 to 2026-11-04** — one job, `Test Python`, failing at
+collection on the SQLAlchemy 2.1 / psycopg default change described under Conventions. Fixed by
+pinning `<2.1` and naming the driver in every default URL. The other eight CI jobs were green
+throughout, which is why it went unnoticed.
 
 **Still open:**
 - **16 of 17 frontend API routes have no session check** (no `middleware.ts`; only the

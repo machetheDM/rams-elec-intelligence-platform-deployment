@@ -61,7 +61,7 @@ import httpx
 from sqlalchemy import create_engine, text
 
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ramsatelec"
+    "DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/ramsatelec"
 )
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "http://localhost:5678")
 FOLLOWUP_WEBHOOK_PATH = "/webhook/followup-checkin"

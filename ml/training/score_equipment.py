@@ -28,7 +28,7 @@ METRICS_PATH = MODEL_DIR / "recurrence_metrics.json"
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/rams_elec",
+    "postgresql+psycopg2://postgres:postgres@localhost:5432/rams_elec",
 )
 
 URGENCY_MAP = {"low": 0, "medium": 1, "high": 2, "emergency": 3}
