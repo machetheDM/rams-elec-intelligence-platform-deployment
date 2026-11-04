@@ -1,26 +1,49 @@
-import InquiryForm from "@/components/inquiry/InquiryForm";
+import EnquiryForm from "@/components/inquiry/EnquiryForm";
+import { FALLBACK_PHONE } from "@/lib/api/enquiries";
+
+/**
+ * Public enquiry page.
+ *
+ * Uses EnquiryForm, which posts to the Manager app's public enquiry endpoint.
+ * It deliberately does NOT use InquiryForm (the AI triage estimator): that
+ * form needs a same-origin route handler to hold the triage service's API
+ * key, and the public build is a static export with no server to run one.
+ *
+ * The copy changed with it. The previous version promised an instant AI cost
+ * estimate "in seconds"; what actually happens now is that a person reads the
+ * enquiry and phones back. Leaving the old wording would have been a claim the
+ * site could not keep — see the honesty principle in CLAUDE.md.
+ */
 
 export const metadata = {
-  title: "Get an Instant Quote | Rams @Elec",
-  description: "Describe your problem and our AI will provide an instant cost estimate and match you with the right technician.",
+  title: "Request a quote | Rams @Elec",
+  description:
+    "Tell us what needs fixing and we will come back to you with a quote. Electrical and refrigeration work across Gauteng and Limpopo.",
 };
 
 export default function InquirePage() {
   return (
-    <div className="min-h-screen pt-24 pb-16">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <span className="text-xs font-semibold text-brand-400 uppercase tracking-widest">
-            AI-Powered Quoting
-          </span>
-          <h1 className="mt-3 text-4xl sm:text-5xl font-bold text-white">
-            Get an Instant Quote
-          </h1>
-          <p className="mt-4 text-industrial-400 max-w-xl mx-auto">
-            Describe your problem. Our AI analyses your request, estimates costs, and matches you with the best technician — in seconds.
-          </p>
+    <div className="min-h-screen pb-16 pt-24">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
+        <h1 className="text-3xl font-bold text-white sm:text-4xl">Request a quote</h1>
+        <p className="mt-4 text-lg text-industrial-300">
+          Tell us what needs fixing and where you are. One of our team reads every enquiry and
+          comes back to you directly — usually the same working day.
+        </p>
+        <p className="mt-2 text-industrial-400">
+          Electrical and refrigeration work across Gauteng and Limpopo. If it cannot wait, phone{" "}
+          <a
+            className="font-medium text-brand-400 underline"
+            href={`tel:${FALLBACK_PHONE.replace(/[^+\d]/g, "")}`}
+          >
+            {FALLBACK_PHONE}
+          </a>
+          .
+        </p>
+
+        <div className="mt-8">
+          <EnquiryForm />
         </div>
-        <InquiryForm />
       </div>
     </div>
   );

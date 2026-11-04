@@ -144,6 +144,32 @@ enable it in the AWS console before the first apply. The hardcoded default in `v
 `.github/workflows/sagemaker-train.yml` all agree. Do not introduce `eu-west-1` as a new
 default — a Lambda in one region reading SSM in another fails at cold start.
 
+**Public enquiry form** (`EnquiryForm`, not `InquiryForm`)
+- Implements **contract v1 owned by the Manager app repo** (`docs/integration/website.md`).
+  That document is the authority. A field it does not list makes the API reject the whole
+  request with 400, so `buildPayload` assembles the body field by field and omits optional
+  values — never spread form state into it. Adding a field is a contract change: the API
+  ships first, then the site sends it.
+- Posts **straight from the browser with no key**. The public site is a static export with
+  no server to proxy through, so anything it held would be public. Defended by rate limits,
+  the honeypot and (when on) Turnstile. `NEXT_PUBLIC_ENQUIRY_URL` is the one config value.
+- `InquiryForm` (AI triage estimate) is a **different component** and cannot be in the
+  public build — it needs a route handler to hold the triage `X-API-Key`.
+- The `idempotencyKey` is generated **once per opened form**, reused on every retry, and
+  regenerated only after a success. Generated in an effect, not in `useState`'s initialiser:
+  `crypto.randomUUID()` does not exist during server rendering and calling it there breaks
+  hydration.
+- The honeypot is **submitted, not blocked**. The server answers 201 with `reference: null`
+  and stores nothing. Short-circuiting it client-side tells a bot which field caught it.
+- 404 / 5xx / no answer must show the phone number and **never** claim the enquiry was sent.
+  Production answers 404 until `WEBSITE_ENQUIRIES_ENABLED=true` on the server.
+- `CONSENT_VERSION` pins the wording the visitor agreed to. Change the consent text, bump it.
+
+**`eslint-plugin-security` fails CI on warnings.** `ci.yml` runs `eslint . --max-warnings 0`,
+and `security/detect-object-injection` fires on *any* computed member access with a non-literal
+key — including a plain `labels[key]` lookup. Fix by restructuring (`Object.entries`,
+`Object.fromEntries`, pass the value not the key), not by disabling the rule.
+
 **Frontend** — strict separation so UI can be redesigned (v0.dev) without touching logic.
 - `src/lib/api/*.ts` = data fetching, no React. `src/hooks/*.ts` = headless state, zero markup.
   `src/components/**` = presentation only.
@@ -349,6 +375,20 @@ designed-never-provisioned.
 - Designed ≠ deployed applies to every line of the target. Do not blur it.
 
 **Still open:**
+- **The public build cannot be a static export yet.** `output: "export"` is app-wide and this
+  app holds 17 route handlers (7 POST), NextAuth, and 6 pages calling `auth()`. Verified by
+  running it: the build dies at *Collecting page data* on `/api/analytics/equipment`. Worse,
+  `headers()` only **warns** under export — a static build would ship with **no CSP and none
+  of the 8 security headers** while `next.config.ts` still lists them. Those move to the
+  serving container (contract section 3). Needs an architecture decision: separate public app
+  (recommended), build-time copy, or strip the non-public routes.
+- **`ChatWidget` is mounted in `(public)/layout.tsx`** and POSTs to `/api/chatbot`. It is both
+  an export blocker and outside the agreed first cut. Remove it from the public layout.
+- **`next/font` downloads Inter from Google Fonts at build time.** On a machine that cannot
+  reach `fonts.googleapis.com` the build *succeeds* and silently ships a fallback font
+  (`Failed to download 'Inter' from Google Fonts. Using fallback font instead.`). Seen on this
+  laptop. The served CSP allows `font-src 'self'` only, which is correct *because* next/font
+  self-hosts — but the build host needs that access or the type is quietly wrong.
 - **16 of 17 frontend API routes have no session check** (no `middleware.ts`; only the
   NextAuth handler imports `auth`). Portal/admin *pages* are gated in layouts — the data
   routes behind them are not, including the seven analytics routes that read Postgres.
