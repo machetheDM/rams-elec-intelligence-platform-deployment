@@ -2,51 +2,97 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   Design system — Rams @Elec
+   ==========================================================================
+   Several classes below are deliberately kept with their old NAMES but new
+   definitions. `.gradient-text` no longer draws a gradient; `.card-glow` no
+   longer glows; `.glass` is no longer translucent.
+
+   That is on purpose. Those classes are used across 8, 3 and 1 components
+   respectively, and deleting them would not raise an error anywhere — Tailwind
+   would simply stop applying anything and the components would quietly lose
+   their styling. Redefining them changes every call site at once, with nothing
+   left to silently break. Once no component references a retired name, the
+   class can go.
+
+   What they were, and why they went:
+     gradient text, glass panels everywhere, and a pulsing halo behind the
+     emergency button are the clearest "generated template" tells. On a page
+     whose job is to get someone to phone an electrician, they are noise.
+   ========================================================================== */
+
 @layer base {
   html {
     scroll-behavior: smooth;
   }
+  /* Respect the OS setting. Smooth scrolling and motion are a problem for
+     vestibular disorders, and WCAG 2.2 AA expects this to be honoured. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
   body {
     @apply bg-industrial-950 text-industrial-100 antialiased;
+  }
+  /* One visible focus treatment everywhere, rather than per-component rings
+     that drift. Gold on charcoal clears AA comfortably. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-400 ring-offset-2 ring-offset-industrial-950;
   }
 }
 
 @layer components {
+  /* Gold button. Text is industrial-950, NEVER white: white on #FFC529 is
+     about 1.7:1 and fails WCAG AA outright. This was the previous definition's
+     actual bug, inherited from the stock amber palette where it was merely
+     poor rather than non-compliant. */
   .btn-primary {
-    @apply inline-flex items-center justify-center px-8 py-3.5 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg transition-all duration-300 hover:shadow-lg hover:shadow-brand-500/25 active:scale-[0.98];
+    @apply inline-flex items-center justify-center rounded-lg bg-brand-500 px-7 py-3.5 font-semibold text-industrial-950 transition-colors duration-200 hover:bg-brand-400 active:bg-brand-600;
   }
   .btn-outline {
-    @apply inline-flex items-center justify-center px-8 py-3.5 border-2 border-industrial-600 hover:border-brand-500 text-industrial-200 hover:text-brand-400 font-semibold rounded-lg transition-all duration-300;
+    @apply inline-flex items-center justify-center rounded-lg border border-industrial-600 px-7 py-3.5 font-semibold text-industrial-100 transition-colors duration-200 hover:border-industrial-400 hover:text-white;
   }
+  /* Red is semantic here (danger / emergency), not an accent — see
+     ui-direction.md, "no third accent". The pulsing glow is gone. */
   .btn-emergency {
-    @apply inline-flex items-center justify-center px-8 py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-all duration-300 hover:shadow-lg hover:shadow-red-600/25 animate-pulse-glow;
+    @apply inline-flex items-center justify-center rounded-lg bg-mark px-7 py-3.5 font-semibold text-white transition-colors duration-200 hover:brightness-110;
   }
+
   .section-heading {
-    @apply text-3xl sm:text-4xl lg:text-5xl font-bold text-white;
+    @apply font-display text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl;
   }
   .section-subheading {
-    @apply text-industrial-400 text-lg max-w-2xl;
+    @apply max-w-2xl text-lg text-industrial-400;
   }
+
   .card {
-    @apply bg-industrial-900 border border-industrial-800 rounded-2xl p-6 hover:border-industrial-700 transition-all duration-300;
+    @apply rounded-xl border border-industrial-800 bg-industrial-900 p-6 transition-colors duration-200 hover:border-industrial-700;
   }
+  /* Retired: was `.card` plus an amber halo. Now simply a card. */
   .card-glow {
-    @apply card hover:border-brand-600/50 hover:shadow-lg hover:shadow-brand-500/5;
+    @apply card;
   }
-  .gradient-text {
-    @apply bg-gradient-to-r from-brand-400 to-brand-600 bg-clip-text text-transparent;
-  }
+  /* Retired: was translucent + backdrop-blur. Backdrop blur on a scrolling
+     page is also a measurable repaint cost on mid-range Android, which is what
+     most visitors here are on. */
   .glass {
-    @apply bg-industrial-900/80 backdrop-blur-xl border border-industrial-800;
+    @apply border border-industrial-800 bg-industrial-900;
+  }
+  /* Retired: was a two-stop gold gradient clipped to text. Solid gold reads
+     better at small sizes and survives a screenshot. */
+  .gradient-text {
+    @apply text-brand-400;
   }
 
-  /* ---------------------------------------------------------------- */
-  /* Industrial / technical design system                              */
-  /* Sharper geometry (small radii), blueprint grid texture, and       */
-  /* monospaced technical labelling — used across the landing page.    */
-  /* ---------------------------------------------------------------- */
-
-  /* Small-caps monospaced label, e.g. "01 / SERVICES" */
   .mono-label {
     @apply font-mono text-[11px] uppercase tracking-[0.2em] text-brand-500;
   }
@@ -54,40 +100,38 @@
     @apply font-mono text-[11px] uppercase tracking-[0.2em] text-industrial-500;
   }
 
-  /* Bento/technical tile — sharper than .card, with a hairline border */
   .tile {
-    @apply relative rounded-lg border border-industrial-800 bg-industrial-900/60 backdrop-blur-sm transition-all duration-300;
+    @apply relative rounded-lg border border-industrial-800 bg-industrial-900 transition-colors duration-200;
   }
   .tile-interactive {
-    @apply tile hover:border-brand-600/40 hover:bg-industrial-900;
+    @apply tile hover:border-industrial-700;
   }
 
-  /* Stat numerals — tabular so columns of figures align optically */
+  /* Tabular so columns of figures align optically. */
   .stat-figure {
-    @apply font-extrabold text-white tabular-nums tracking-tight;
+    @apply font-display font-extrabold tabular-nums tracking-tight text-white;
   }
 
-  /* Hairline rule with an amber ignition point at the left */
   .rule-accent {
-    @apply h-px w-full bg-gradient-to-r from-brand-500/60 via-industrial-800 to-transparent;
+    @apply h-px w-full bg-industrial-800;
   }
 }
 
 @layer utilities {
-  /* Blueprint grid texture. Pair with a mask to fade it out at edges. */
+  /* Blueprint grid texture, kept but quietened. Pair with a mask so it never
+     reaches a hard edge. */
   .bg-grid {
     background-image:
-      linear-gradient(to right, rgba(148, 163, 184, 0.07) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(148, 163, 184, 0.07) 1px, transparent 1px);
+      linear-gradient(to right, rgba(165, 174, 190, 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(165, 174, 190, 0.05) 1px, transparent 1px);
     background-size: 64px 64px;
   }
   .bg-grid-fine {
     background-image:
-      linear-gradient(to right, rgba(148, 163, 184, 0.05) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+      linear-gradient(to right, rgba(165, 174, 190, 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(165, 174, 190, 0.035) 1px, transparent 1px);
     background-size: 16px 16px;
   }
-  /* Radial fade so grid texture never reaches a hard edge */
   .mask-fade {
     -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 40%, transparent 100%);
     mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 40%, transparent 100%);

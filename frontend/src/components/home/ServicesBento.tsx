@@ -79,7 +79,6 @@ export default function ServicesBento() {
     <section id="solutions" className="relative overflow-hidden py-24 lg:py-36">
       <div className="pointer-events-none absolute inset-0 bg-grid-fine mask-fade opacity-60" />
       {/* Ambient amber wash anchored top-left, echoing the instrumentation panel below */}
-      <div className="pointer-events-none absolute -left-40 -top-40 h-96 w-96 rounded-full bg-brand-500/[0.06] blur-3xl" />
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Section header — split axis: narrative left, technical index right */}

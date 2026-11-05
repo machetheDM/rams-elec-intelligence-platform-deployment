@@ -64,8 +64,14 @@ export const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? 
  */
 export const CONSENT_VERSION = "2026-11-04";
 
-/** The phone number shown whenever an enquiry could not be delivered. */
-export const FALLBACK_PHONE = "+27 83 453 0607";
+/**
+ * The phone number shown whenever an enquiry could not be delivered.
+ *
+ * Re-exported from lib/company.ts rather than written here. The value that was
+ * originally hard-coded at this line was fabricated and did not belong to the
+ * company -- on a form whose failure path tells a customer to phone it.
+ */
+export { PHONE_DISPLAY as FALLBACK_PHONE } from "@/lib/company";
 
 // ---------------------------------------------------------------------------
 // Types
