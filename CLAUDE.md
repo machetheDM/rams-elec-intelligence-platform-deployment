@@ -144,6 +144,24 @@ enable it in the AWS console before the first apply. The hardcoded default in `v
 `.github/workflows/sagemaker-train.yml` all agree. Do not introduce `eu-west-1` as a new
 default — a Lambda in one region reading SSM in another fails at cold start.
 
+**Two build targets from one tree** (`next.config.ts`, `BUILD_TARGET`)
+- `npm run build:site` → **public static export** → `frontend/out/`. `npm run build` → the
+  full private app (standalone). The deploy script in the Manager app repo **refuses** a build
+  containing `/admin`, `/dashboard`, `/equipment`, `/service-history`, `/compliance`,
+  `/chatbot`, `/login` or `/api`.
+- The split is **`pageExtensions`, not file moves**. Public routes are named
+  `page.site.tsx` / `layout.site.tsx` / `not-found.site.tsx`; the site build lists only the
+  `site.*` extensions, so `admin/page.tsx`, `(portal)/**`, `login/page.tsx` and every
+  `api/route.ts` are never routes — `output: "export"` therefore never has to reject a route
+  handler. The private build lists both sets, so it still serves the public pages.
+- **Never put both `page.tsx` and `page.site.tsx` in one folder** — a duplicate route in the
+  private build.
+- `build:site` verifies `out/` against the same forbidden list the deploy uses, so a laptop
+  build fails the way the deploy would.
+- The site build has **no `headers()`**, deliberately: Next only *warns* under export, so
+  leaving it would ship a site with no CSP while the config still listed one. The server sends
+  them (contract section 3).
+
 **Public enquiry form** (`EnquiryForm`, not `InquiryForm`)
 - Implements **contract v1 owned by the Manager app repo** (`docs/integration/website.md`).
   That document is the authority. A field it does not list makes the API reject the whole
@@ -375,15 +393,6 @@ designed-never-provisioned.
 - Designed ≠ deployed applies to every line of the target. Do not blur it.
 
 **Still open:**
-- **The public build cannot be a static export yet.** `output: "export"` is app-wide and this
-  app holds 17 route handlers (7 POST), NextAuth, and 6 pages calling `auth()`. Verified by
-  running it: the build dies at *Collecting page data* on `/api/analytics/equipment`. Worse,
-  `headers()` only **warns** under export — a static build would ship with **no CSP and none
-  of the 8 security headers** while `next.config.ts` still lists them. Those move to the
-  serving container (contract section 3). Needs an architecture decision: separate public app
-  (recommended), build-time copy, or strip the non-public routes.
-- **`ChatWidget` is mounted in `(public)/layout.tsx`** and POSTs to `/api/chatbot`. It is both
-  an export blocker and outside the agreed first cut. Remove it from the public layout.
 - **`next/font` downloads Inter from Google Fonts at build time.** On a machine that cannot
   reach `fonts.googleapis.com` the build *succeeds* and silently ships a fallback font
   (`Failed to download 'Inter' from Google Fonts. Using fallback font instead.`). Seen on this
