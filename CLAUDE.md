@@ -188,13 +188,63 @@ and `security/detect-object-injection` fires on *any* computed member access wit
 key — including a plain `labels[key]` lookup. Fix by restructuring (`Object.entries`,
 `Object.fromEntries`, pass the value not the key), not by disabling the rule.
 
+**Company facts live in `src/lib/company.ts` — nowhere else**
+- Phone, email, areas, base and hours. They were duplicated across
+  `ContactSection`, `Footer`, `EnquiryForm` and the 404 page, and **a fabricated
+  phone number reached three of them** before it was caught. Every value in that file
+  names where it came from.
+- The real number is **+27 71 101 8493**; the working address is
+  **ramsatelec@gmail.com**. Do **not** publish `info@ramsatelec.co.za` — it receives
+  nothing until the owner says otherwise. If a value disagrees with the company's
+  invoices, the invoice wins.
+- Never write a contact detail you have not read from this repo or been given. Inventing
+  a plausible-looking number on a page that tells a customer to phone it is the worst
+  version of the honesty failure this project exists to avoid.
+
+**What the public static export cannot do** — four landing sections were removed because
+they could only fail in it, not because of taste:
+
+| Section | Called | In the export |
+|---|---|---|
+| `LoadSheddingWidget` | browser → `NEXT_PUBLIC_LOADSHEDDING_API_URL \|\| "http://localhost:8002"` | the **visitor's own machine**; CSP `connect-src` blocks it anyway |
+| inline `InquiryForm` | `/api/triage/*` | route handler — 404 |
+| `QuoteEstimatorStats` | `/api/model-metrics` | route handler — 404 |
+| `AlertSignupSection` | `/api/alerts/subscribe` | route handler — 404 |
+
+Anything added to a `page.site.tsx` must be static, or get its data from the Manager app's
+public API. There is no server. `TestimonialsSection`, `SecurityTrustSection`, `RiskSection`
+and `CtaSection` were also cut — reasons are in the comment at the top of
+`src/app/(public)/page.site.tsx`, so they are not silently restored.
+
+**Brand and design tokens** (`tailwind.config.ts`, `globals.css`)
+- `brand-*` is **gold**, anchored on the company's `BrandGold` **`#FFC529`** at `brand-500`.
+  `industrial-*` is **charcoal**: `950 = #12131B` (ground), `900 = #222736` (cards/inputs),
+  `400 = #A5AEBE` (secondary text). Taken from the Manager app's `Colors.xaml` via its
+  `docs/ui-direction.md`. Token *names* did not change, so components picked it up unedited.
+- **Gold is a text colour on dark grounds only.** Gold on white is ~1.7:1 and fails AA. A gold
+  *background* always carries `text-industrial-950`, never white — `.btn-primary` had exactly
+  that bug, inherited from the stock amber palette.
+- **No third accent.** The logo's red `#E31B38` is the `mark` token: it belongs to the logo and
+  to danger states, never to buttons, links or headings.
+- The real logo is `public/brand/re-logo.svg`, copied from the Manager app. What was there
+  before was a hand-drawn house-and-"RE" in generic amber, captioned "Official Rams @Elec
+  mark". It was not official. Do not reintroduce a drawn substitute.
+- `.gradient-text`, `.card-glow` and `.glass` are **retired in place** — same names, new
+  definitions (solid gold, plain card, solid panel). They are used across 8/3/1 components and
+  deleting a `@layer components` class raises no error anywhere; Tailwind just stops applying
+  it and the component quietly loses its styling. Redefine, then delete once unreferenced.
+- `src/app/admin/analytics/**` still hardcodes `#f59e0b`/`#1e293b` in Recharts props. Those
+  pages are not in the public build and were left alone; they will look off-brand until the
+  admin UI gets its own pass.
+
 **Frontend** — strict separation so UI can be redesigned (v0.dev) without touching logic.
 - `src/lib/api/*.ts` = data fetching, no React. `src/hooks/*.ts` = headless state, zero markup.
   `src/components/**` = presentation only.
 - **Never** put an API key in a `NEXT_PUBLIC_*` var. Services are API-key gated, so browser calls
   go through a same-origin proxy route in `src/app/api/*/route.ts` holding `INTERNAL_API_KEY`.
 - Proxy routes must `try/catch` the `fetch` and return **503**, not let ECONNREFUSED become a 500.
-- Tailwind tokens: `brand-*` (amber) and `industrial-*` (slate). Do not introduce a new palette.
+- Tailwind tokens: `brand-*` (gold) and `industrial-*` (charcoal) — see the brand block above.
+  Do not introduce a new palette.
 - Fonts via `next/font` — **never** hand-write `<head>` in App Router (React 19 hoists `<link>`
   and breaks hydration).
 
@@ -393,11 +443,14 @@ designed-never-provisioned.
 - Designed ≠ deployed applies to every line of the target. Do not blur it.
 
 **Still open:**
-- **`next/font` downloads Inter from Google Fonts at build time.** On a machine that cannot
-  reach `fonts.googleapis.com` the build *succeeds* and silently ships a fallback font
-  (`Failed to download 'Inter' from Google Fonts. Using fallback font instead.`). Seen on this
-  laptop. The served CSP allows `font-src 'self'` only, which is correct *because* next/font
-  self-hosts — but the build host needs that access or the type is quietly wrong.
+- **`next/font` can silently ship a fallback font.** It fetches each weight from Google Fonts
+  at build time with a **3s timeout**, and on a slow link the build *succeeds* with only
+  `Failed to download 'Inter' from Google Fonts. Using fallback font instead.` Measured on
+  this laptop: `fonts.googleapis.com` answers in **~4.4s**, so it is latency, not a block —
+  which is worse, because it works often enough to look fine. Weights were trimmed (Inter 7→4,
+  Archivo 3) to cut the number of fetches. The served CSP allows `font-src 'self'` only, which
+  is correct *because* next/font self-hosts; the build host just has to actually get the files.
+  **Check the build log for that warning before shipping a deploy.**
 - **16 of 17 frontend API routes have no session check** (no `middleware.ts`; only the
   NextAuth handler imports `auth`). Portal/admin *pages* are gated in layouts — the data
   routes behind them are not, including the seven analytics routes that read Postgres.

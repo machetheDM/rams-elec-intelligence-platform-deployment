@@ -55,7 +55,6 @@ export default function AlertSignupSection() {
   return (
     <section className="relative overflow-hidden border-y border-industrial-800 bg-industrial-900/40 py-24 lg:py-32">
       <div className="pointer-events-none absolute inset-0 bg-grid-fine opacity-40" />
-      <div className="pointer-events-none absolute -right-40 top-1/2 h-96 w-96 -translate-y-1/2 rounded-full bg-brand-500/[0.06] blur-3xl" />
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-14 lg:grid-cols-12 lg:gap-20">
