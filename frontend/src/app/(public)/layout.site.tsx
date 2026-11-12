@@ -1,3 +1,5 @@
+import StickyCallButton from "@/components/layout/StickyCallButton";
+
 /**
  * Public-site layout.
  *
@@ -12,7 +14,15 @@
  *
  * The portal keeps its own full-page chat at /chatbot, which is part of the
  * private build and unaffected.
+ *
+ * StickyCallButton replaces it in the same corner — mobile only, and it needs
+ * nothing from a server.
  */
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <StickyCallButton />
+    </>
+  );
 }

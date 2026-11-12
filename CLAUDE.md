@@ -216,6 +216,20 @@ public API. There is no server. `TestimonialsSection`, `SecurityTrustSection`, `
 and `CtaSection` were also cut — reasons are in the comment at the top of
 `src/app/(public)/page.site.tsx`, so they are not silently restored.
 
+**Public navigation must not link to anything the export excludes**
+- The Navbar shipped **two `/login` links** (desktop, and "Login / Portal" on mobile). The
+  static export deliberately has no `/login`, so both were guaranteed 404s in front of
+  customers. Removed. Before adding a public link, check it survives `npm run build:site`.
+- A mobile sticky call button (`StickyCallButton`) replaces the old ChatWidget in that corner.
+
+**UNVERIFIED: the published prices on `/services`.** Twelve services carry specific ranges
+(`R3,500 – R15,000`) and response promises (`1 hour`, `Same day`, `24/7`). Unlike
+`HeroSection`, which records its copy as taken from the live ramsatelec.com site, that page
+carries **no source note**, and no rate card exists anywhere in the repo. Treat them as
+unsourced until the owner confirms. Published prices on a commercial site are a representation
+to consumers — the same Consumer Protection Act exposure already noted for testimonials, with
+money attached. **Do not deploy the services page until this is settled.**
+
 **Brand and design tokens** (`tailwind.config.ts`, `globals.css`)
 - `brand-*` is **gold**, anchored on the company's `BrandGold` **`#FFC529`** at `brand-500`.
   `industrial-*` is **charcoal**: `950 = #12131B` (ground), `900 = #222736` (cards/inputs),
