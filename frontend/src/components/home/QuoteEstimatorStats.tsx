@@ -38,7 +38,6 @@ export default function QuoteEstimatorStats() {
     <section className="relative overflow-hidden border-y border-industrial-800 bg-industrial-900/40 py-24 lg:py-32">
       <div className="pointer-events-none absolute inset-0 bg-grid-fine opacity-40" />
       {/* Instrumentation glow behind the readout column */}
-      <div className="pointer-events-none absolute right-0 top-1/2 h-[32rem] w-[32rem] -translate-y-1/2 translate-x-1/3 rounded-full bg-brand-500/[0.05] blur-3xl" />
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-14 lg:grid-cols-12 lg:gap-20">

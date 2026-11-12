@@ -83,25 +83,81 @@ const securityHeaders = [
   { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
 ];
 
-const nextConfig: NextConfig = {
-  output: "standalone",
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "images.unsplash.com",
+// =============================================================================
+// TWO BUILD TARGETS FROM ONE SOURCE TREE
+// =============================================================================
+// BUILD_TARGET=site   -> the PUBLIC static export (npm run build:site -> out/)
+// anything else       -> the full private app (npm run build -> standalone)
+//
+// The public site is served as a static export from the Manager app's Cape
+// Town server. Its deploy script REFUSES a build that contains /admin,
+// /dashboard, /equipment, /service-history, /compliance, /chatbot, /login or
+// /api, because those pages run on invented data. Hiding a nav link is not
+// enough -- the files must not exist in out/.
+//
+// HOW THE SPLIT WORKS: pageExtensions, not file moves.
+//
+// Next treats a file as a route only when its name matches page.<ext> /
+// layout.<ext> / route.<ext> for an extension in this list. Public routes are
+// therefore named `page.site.tsx`, and the site build lists only the `site.*`
+// extensions -- so admin/page.tsx, (portal)/**, login/page.tsx and every
+// api/route.ts are not routes at all. They are not excluded, hidden or
+// stripped: the router never sees them, so `output: "export"` never has to
+// reject a route handler it cannot statically render.
+//
+// The alternatives were a second Next app (duplicate package.json and
+// node_modules) or a build script that renames directories and restores them
+// afterwards (mutates the working tree, and leaves it broken if the build
+// dies). This costs one naming convention and nothing at runtime.
+//
+// The private build lists BOTH sets, so it still serves the public pages.
+// A folder must therefore never hold both page.tsx and page.site.tsx -- that
+// is a duplicate route in the private build. ci.yml guards the whole
+// arrangement; see the `public-site-export` job.
+// =============================================================================
+const isSiteBuild = process.env.BUILD_TARGET === "site";
+
+const nextConfig: NextConfig = isSiteBuild
+  ? {
+      output: "export",
+      pageExtensions: ["site.tsx", "site.ts"],
+      images: {
+        // An export has no image optimiser, so next/image must not try to use
+        // one. Images are served as authored.
+        unoptimized: true,
+        remotePatterns: [{ protocol: "https", hostname: "images.unsplash.com" }],
       },
-    ],
-  },
-  // Apply security headers to ALL routes
-  async headers() {
-    return [
-      {
-        source: "/(.*)",
-        headers: securityHeaders,
+      // NO headers() here, deliberately.
+      //
+      // Next WARNS rather than errors on headers() under `output: export`
+      // ("Specified "headers" will not automatically work"), so leaving the
+      // block in place would produce a build that succeeds and ships with no
+      // CSP and none of the security headers, while this file still listed
+      // them and still looked correct. Omitting it keeps the config honest:
+      // the server sends these headers, and the contract's section 3 is where
+      // their values live.
+    }
+  : {
+      output: "standalone",
+      // Both sets: the private app still serves the public pages.
+      pageExtensions: ["tsx", "ts", "jsx", "js", "site.tsx", "site.ts"],
+      images: {
+        remotePatterns: [
+          {
+            protocol: "https",
+            hostname: "images.unsplash.com",
+          },
+        ],
       },
-    ];
-  },
-};
+      // Apply security headers to ALL routes
+      async headers() {
+        return [
+          {
+            source: "/(.*)",
+            headers: securityHeaders,
+          },
+        ];
+      },
+    };
 
 export default nextConfig;

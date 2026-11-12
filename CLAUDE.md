@@ -144,13 +144,121 @@ enable it in the AWS console before the first apply. The hardcoded default in `v
 `.github/workflows/sagemaker-train.yml` all agree. Do not introduce `eu-west-1` as a new
 default — a Lambda in one region reading SSM in another fails at cold start.
 
+**Two build targets from one tree** (`next.config.ts`, `BUILD_TARGET`)
+- `npm run build:site` → **public static export** → `frontend/out/`. `npm run build` → the
+  full private app (standalone). The deploy script in the Manager app repo **refuses** a build
+  containing `/admin`, `/dashboard`, `/equipment`, `/service-history`, `/compliance`,
+  `/chatbot`, `/login` or `/api`.
+- The split is **`pageExtensions`, not file moves**. Public routes are named
+  `page.site.tsx` / `layout.site.tsx` / `not-found.site.tsx`; the site build lists only the
+  `site.*` extensions, so `admin/page.tsx`, `(portal)/**`, `login/page.tsx` and every
+  `api/route.ts` are never routes — `output: "export"` therefore never has to reject a route
+  handler. The private build lists both sets, so it still serves the public pages.
+- **Never put both `page.tsx` and `page.site.tsx` in one folder** — a duplicate route in the
+  private build.
+- `build:site` verifies `out/` against the same forbidden list the deploy uses, so a laptop
+  build fails the way the deploy would.
+- The site build has **no `headers()`**, deliberately: Next only *warns* under export, so
+  leaving it would ship a site with no CSP while the config still listed one. The server sends
+  them (contract section 3).
+
+**Public enquiry form** (`EnquiryForm`, not `InquiryForm`)
+- Implements **contract v1 owned by the Manager app repo** (`docs/integration/website.md`).
+  That document is the authority. A field it does not list makes the API reject the whole
+  request with 400, so `buildPayload` assembles the body field by field and omits optional
+  values — never spread form state into it. Adding a field is a contract change: the API
+  ships first, then the site sends it.
+- Posts **straight from the browser with no key**. The public site is a static export with
+  no server to proxy through, so anything it held would be public. Defended by rate limits,
+  the honeypot and (when on) Turnstile. `NEXT_PUBLIC_ENQUIRY_URL` is the one config value.
+- `InquiryForm` (AI triage estimate) is a **different component** and cannot be in the
+  public build — it needs a route handler to hold the triage `X-API-Key`.
+- The `idempotencyKey` is generated **once per opened form**, reused on every retry, and
+  regenerated only after a success. Generated in an effect, not in `useState`'s initialiser:
+  `crypto.randomUUID()` does not exist during server rendering and calling it there breaks
+  hydration.
+- The honeypot is **submitted, not blocked**. The server answers 201 with `reference: null`
+  and stores nothing. Short-circuiting it client-side tells a bot which field caught it.
+- 404 / 5xx / no answer must show the phone number and **never** claim the enquiry was sent.
+  Production answers 404 until `WEBSITE_ENQUIRIES_ENABLED=true` on the server.
+- `CONSENT_VERSION` pins the wording the visitor agreed to. Change the consent text, bump it.
+
+**`eslint-plugin-security` fails CI on warnings.** `ci.yml` runs `eslint . --max-warnings 0`,
+and `security/detect-object-injection` fires on *any* computed member access with a non-literal
+key — including a plain `labels[key]` lookup. Fix by restructuring (`Object.entries`,
+`Object.fromEntries`, pass the value not the key), not by disabling the rule.
+
+**Company facts live in `src/lib/company.ts` — nowhere else**
+- Phone, email, areas, base and hours. They were duplicated across
+  `ContactSection`, `Footer`, `EnquiryForm` and the 404 page, and **a fabricated
+  phone number reached three of them** before it was caught. Every value in that file
+  names where it came from.
+- The real number is **+27 71 101 8493**; the working address is
+  **ramsatelec@gmail.com**. Do **not** publish `info@ramsatelec.co.za` — it receives
+  nothing until the owner says otherwise. If a value disagrees with the company's
+  invoices, the invoice wins.
+- Never write a contact detail you have not read from this repo or been given. Inventing
+  a plausible-looking number on a page that tells a customer to phone it is the worst
+  version of the honesty failure this project exists to avoid.
+
+**What the public static export cannot do** — four landing sections were removed because
+they could only fail in it, not because of taste:
+
+| Section | Called | In the export |
+|---|---|---|
+| `LoadSheddingWidget` | browser → `NEXT_PUBLIC_LOADSHEDDING_API_URL \|\| "http://localhost:8002"` | the **visitor's own machine**; CSP `connect-src` blocks it anyway |
+| inline `InquiryForm` | `/api/triage/*` | route handler — 404 |
+| `QuoteEstimatorStats` | `/api/model-metrics` | route handler — 404 |
+| `AlertSignupSection` | `/api/alerts/subscribe` | route handler — 404 |
+
+Anything added to a `page.site.tsx` must be static, or get its data from the Manager app's
+public API. There is no server. `TestimonialsSection`, `SecurityTrustSection`, `RiskSection`
+and `CtaSection` were also cut — reasons are in the comment at the top of
+`src/app/(public)/page.site.tsx`, so they are not silently restored.
+
+**Public navigation must not link to anything the export excludes**
+- The Navbar shipped **two `/login` links** (desktop, and "Login / Portal" on mobile). The
+  static export deliberately has no `/login`, so both were guaranteed 404s in front of
+  customers. Removed. Before adding a public link, check it survives `npm run build:site`.
+- A mobile sticky call button (`StickyCallButton`) replaces the old ChatWidget in that corner.
+
+**UNVERIFIED: the published prices on `/services`.** Twelve services carry specific ranges
+(`R3,500 – R15,000`) and response promises (`1 hour`, `Same day`, `24/7`). Unlike
+`HeroSection`, which records its copy as taken from the live ramsatelec.com site, that page
+carries **no source note**, and no rate card exists anywhere in the repo. Treat them as
+unsourced until the owner confirms. Published prices on a commercial site are a representation
+to consumers — the same Consumer Protection Act exposure already noted for testimonials, with
+money attached. **Do not deploy the services page until this is settled.**
+
+**Brand and design tokens** (`tailwind.config.ts`, `globals.css`)
+- `brand-*` is **gold**, anchored on the company's `BrandGold` **`#FFC529`** at `brand-500`.
+  `industrial-*` is **charcoal**: `950 = #12131B` (ground), `900 = #222736` (cards/inputs),
+  `400 = #A5AEBE` (secondary text). Taken from the Manager app's `Colors.xaml` via its
+  `docs/ui-direction.md`. Token *names* did not change, so components picked it up unedited.
+- **Gold is a text colour on dark grounds only.** Gold on white is ~1.7:1 and fails AA. A gold
+  *background* always carries `text-industrial-950`, never white — `.btn-primary` had exactly
+  that bug, inherited from the stock amber palette.
+- **No third accent.** The logo's red `#E31B38` is the `mark` token: it belongs to the logo and
+  to danger states, never to buttons, links or headings.
+- The real logo is `public/brand/re-logo.svg`, copied from the Manager app. What was there
+  before was a hand-drawn house-and-"RE" in generic amber, captioned "Official Rams @Elec
+  mark". It was not official. Do not reintroduce a drawn substitute.
+- `.gradient-text`, `.card-glow` and `.glass` are **retired in place** — same names, new
+  definitions (solid gold, plain card, solid panel). They are used across 8/3/1 components and
+  deleting a `@layer components` class raises no error anywhere; Tailwind just stops applying
+  it and the component quietly loses its styling. Redefine, then delete once unreferenced.
+- `src/app/admin/analytics/**` still hardcodes `#f59e0b`/`#1e293b` in Recharts props. Those
+  pages are not in the public build and were left alone; they will look off-brand until the
+  admin UI gets its own pass.
+
 **Frontend** — strict separation so UI can be redesigned (v0.dev) without touching logic.
 - `src/lib/api/*.ts` = data fetching, no React. `src/hooks/*.ts` = headless state, zero markup.
   `src/components/**` = presentation only.
 - **Never** put an API key in a `NEXT_PUBLIC_*` var. Services are API-key gated, so browser calls
   go through a same-origin proxy route in `src/app/api/*/route.ts` holding `INTERNAL_API_KEY`.
 - Proxy routes must `try/catch` the `fetch` and return **503**, not let ECONNREFUSED become a 500.
-- Tailwind tokens: `brand-*` (amber) and `industrial-*` (slate). Do not introduce a new palette.
+- Tailwind tokens: `brand-*` (gold) and `industrial-*` (charcoal) — see the brand block above.
+  Do not introduce a new palette.
 - Fonts via `next/font` — **never** hand-write `<head>` in App Router (React 19 hoists `<link>`
   and breaks hydration).
 
@@ -349,6 +457,14 @@ designed-never-provisioned.
 - Designed ≠ deployed applies to every line of the target. Do not blur it.
 
 **Still open:**
+- **`next/font` can silently ship a fallback font.** It fetches each weight from Google Fonts
+  at build time with a **3s timeout**, and on a slow link the build *succeeds* with only
+  `Failed to download 'Inter' from Google Fonts. Using fallback font instead.` Measured on
+  this laptop: `fonts.googleapis.com` answers in **~4.4s**, so it is latency, not a block —
+  which is worse, because it works often enough to look fine. Weights were trimmed (Inter 7→4,
+  Archivo 3) to cut the number of fetches. The served CSP allows `font-src 'self'` only, which
+  is correct *because* next/font self-hosts; the build host just has to actually get the files.
+  **Check the build log for that warning before shipping a deploy.**
 - **16 of 17 frontend API routes have no session check** (no `middleware.ts`; only the
   NextAuth handler imports `auth`). Portal/admin *pages* are gated in layouts — the data
   routes behind them are not, including the seven analytics routes that read Postgres.
