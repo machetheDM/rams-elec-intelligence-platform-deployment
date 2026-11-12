@@ -22,7 +22,11 @@ const eslintConfig = [
     },
   },
   {
-    ignores: ["node_modules/**", ".next/**", "next-env.d.ts"],
+    // out/ is the static export from `npm run build:site` — minified bundles,
+    // not source. Without it here, running the site build and then `eslint .`
+    // reports thousands of problems from the build output and the
+    // --max-warnings 0 gate becomes unusable.
+    ignores: ["node_modules/**", ".next/**", "out/**", "next-env.d.ts"],
   },
 ];
 

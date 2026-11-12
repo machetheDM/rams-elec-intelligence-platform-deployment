@@ -664,3 +664,86 @@ matches the provider schema offline; it proves nothing about quotas, globally-un
 collisions, regional SKU availability, or RBAC. `terraform/README.md` now states exactly which
 claims CI supports and which it does not, so the next session cannot honestly upgrade the wording.
 
+---
+
+## Splitting one Next app into a public export and a private app — 2026-11-05
+
+### The requirement
+
+The public site is now hosted as a static export on the Manager app's Cape Town server, and
+its deploy script **refuses** any build containing `/admin`, `/dashboard`, `/equipment`,
+`/service-history`, `/compliance`, `/chatbot`, `/login` or `/api` — those pages run on
+invented seed data. Hiding a nav link is not enough; the files must not exist in `out/`.
+
+### Why this was not a one-line config change
+
+`output: "export"` is **app-wide**. Running it against the app as it stood failed:
+
+```
+Error: export const dynamic = "force-static"/export const revalidate not configured
+on route "/api/analytics/equipment" with "output: export"
+```
+
+17 route handlers, 7 of them POST (which cannot be exported at all), plus NextAuth and six
+pages calling `auth()`. The nine GET handlers could technically take `force-static`, but they
+read Prisma at request time, so freezing them at build would serve numbers frozen on build
+day — a wrong answer wearing a fix's clothes.
+
+The same probe surfaced something quieter and worse:
+
+```
+⚠ Specified "headers" will not automatically work with "output: export"
+```
+
+A **warning, not an error**. A static build would have succeeded and shipped with no CSP and
+none of the eight security headers, while `next.config.ts` still listed all of them and still
+read as correct. That is the project's silent-no-op class again, this time deleting a
+documented ECCU510 control.
+
+### What was chosen: pageExtensions
+
+Three options were real:
+
+| | Approach | Why not |
+|---|---|---|
+| a | A second Next app for the public site | Duplicate `package.json` and `node_modules`, second CI install, shared code behind an `externalDir` alias |
+| b | A build script that renames directories and restores them | Mutates the working tree mid-build; a crash leaves the repo broken |
+| **c** | **`pageExtensions`** | chosen |
+
+Next treats a file as a route only when its name matches `page.<ext>` for an extension in
+`pageExtensions`. Public routes are therefore named `page.site.tsx`, and the site build lists
+only the `site.*` extensions. `admin/page.tsx`, `(portal)/**`, `login/page.tsx` and every
+`api/route.ts` are then **not routes at all** — so `output: "export"` never has to reject a
+route handler it cannot render. The private build lists both sets and still serves everything.
+
+Cost: one naming convention, one config branch, and a rule that a folder must never hold both
+`page.tsx` and `page.site.tsx`. No duplication, no file moves, nothing at runtime.
+
+Verified rather than assumed, on a throwaway branch before committing to it: the probe build
+produced exactly the `.site.tsx` routes and an `out/` with none of the eight forbidden paths.
+
+### Three things the work turned up
+
+**The custom 404 was free.** `not-found.site.tsx` exports to `out/404.html`, which is what the
+server returns for unknown paths. Without one the visitor gets nginx's default — no way back,
+no phone number.
+
+**`eslint-plugin-security` fought the verifier.** Probing each forbidden path with
+`existsSync` drew three `detect-non-literal-fs-filename` warnings, and CI fails on warnings.
+Restructuring to a single `readdirSync` of a constant directory plus pure string comparison
+removed them without a disable comment — and is the better implementation anyway, since it
+handles the folder form and the `.html` form from one listing.
+
+**`out/` was not in eslint's ignores.** Only `.next/**` was. Running the site build and then
+`eslint .` reported **3,928 problems** from the minified export. Nobody had hit it because
+nobody had produced an `out/` before. Added, with a comment.
+
+### What guards it now
+
+`npm run build:site` runs the same forbidden-path assertion the deploy does, so a laptop build
+fails the way the deploy would, three minutes earlier. `ci.yml`'s `public-site-export` job runs
+the build and then re-checks `out/` **independently of the script**, so weakening the script
+does not quietly weaken the gate.
+
+Nothing is deployed. The command that produces the folder is `npm run build:site` in
+`frontend/`, and shipping it remains the owner's step.

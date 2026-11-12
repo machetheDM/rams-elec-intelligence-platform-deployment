@@ -144,6 +144,50 @@ enable it in the AWS console before the first apply. The hardcoded default in `v
 `.github/workflows/sagemaker-train.yml` all agree. Do not introduce `eu-west-1` as a new
 default — a Lambda in one region reading SSM in another fails at cold start.
 
+**Two build targets from one tree** (`next.config.ts`, `BUILD_TARGET`)
+- `npm run build:site` → **public static export** → `frontend/out/`. `npm run build` → the
+  full private app (standalone). The deploy script in the Manager app repo **refuses** a build
+  containing `/admin`, `/dashboard`, `/equipment`, `/service-history`, `/compliance`,
+  `/chatbot`, `/login` or `/api`.
+- The split is **`pageExtensions`, not file moves**. Public routes are named
+  `page.site.tsx` / `layout.site.tsx` / `not-found.site.tsx`; the site build lists only the
+  `site.*` extensions, so `admin/page.tsx`, `(portal)/**`, `login/page.tsx` and every
+  `api/route.ts` are never routes — `output: "export"` therefore never has to reject a route
+  handler. The private build lists both sets, so it still serves the public pages.
+- **Never put both `page.tsx` and `page.site.tsx` in one folder** — a duplicate route in the
+  private build.
+- `build:site` verifies `out/` against the same forbidden list the deploy uses, so a laptop
+  build fails the way the deploy would.
+- The site build has **no `headers()`**, deliberately: Next only *warns* under export, so
+  leaving it would ship a site with no CSP while the config still listed one. The server sends
+  them (contract section 3).
+
+**Public enquiry form** (`EnquiryForm`, not `InquiryForm`)
+- Implements **contract v1 owned by the Manager app repo** (`docs/integration/website.md`).
+  That document is the authority. A field it does not list makes the API reject the whole
+  request with 400, so `buildPayload` assembles the body field by field and omits optional
+  values — never spread form state into it. Adding a field is a contract change: the API
+  ships first, then the site sends it.
+- Posts **straight from the browser with no key**. The public site is a static export with
+  no server to proxy through, so anything it held would be public. Defended by rate limits,
+  the honeypot and (when on) Turnstile. `NEXT_PUBLIC_ENQUIRY_URL` is the one config value.
+- `InquiryForm` (AI triage estimate) is a **different component** and cannot be in the
+  public build — it needs a route handler to hold the triage `X-API-Key`.
+- The `idempotencyKey` is generated **once per opened form**, reused on every retry, and
+  regenerated only after a success. Generated in an effect, not in `useState`'s initialiser:
+  `crypto.randomUUID()` does not exist during server rendering and calling it there breaks
+  hydration.
+- The honeypot is **submitted, not blocked**. The server answers 201 with `reference: null`
+  and stores nothing. Short-circuiting it client-side tells a bot which field caught it.
+- 404 / 5xx / no answer must show the phone number and **never** claim the enquiry was sent.
+  Production answers 404 until `WEBSITE_ENQUIRIES_ENABLED=true` on the server.
+- `CONSENT_VERSION` pins the wording the visitor agreed to. Change the consent text, bump it.
+
+**`eslint-plugin-security` fails CI on warnings.** `ci.yml` runs `eslint . --max-warnings 0`,
+and `security/detect-object-injection` fires on *any* computed member access with a non-literal
+key — including a plain `labels[key]` lookup. Fix by restructuring (`Object.entries`,
+`Object.fromEntries`, pass the value not the key), not by disabling the rule.
+
 **Frontend** — strict separation so UI can be redesigned (v0.dev) without touching logic.
 - `src/lib/api/*.ts` = data fetching, no React. `src/hooks/*.ts` = headless state, zero markup.
   `src/components/**` = presentation only.
@@ -349,6 +393,11 @@ designed-never-provisioned.
 - Designed ≠ deployed applies to every line of the target. Do not blur it.
 
 **Still open:**
+- **`next/font` downloads Inter from Google Fonts at build time.** On a machine that cannot
+  reach `fonts.googleapis.com` the build *succeeds* and silently ships a fallback font
+  (`Failed to download 'Inter' from Google Fonts. Using fallback font instead.`). Seen on this
+  laptop. The served CSP allows `font-src 'self'` only, which is correct *because* next/font
+  self-hosts — but the build host needs that access or the type is quietly wrong.
 - **16 of 17 frontend API routes have no session check** (no `middleware.ts`; only the
   NextAuth handler imports `auth`). Portal/admin *pages* are gated in layouts — the data
   routes behind them are not, including the seven analytics routes that read Postgres.
